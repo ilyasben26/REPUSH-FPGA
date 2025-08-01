@@ -1,4 +1,4 @@
-/* Copyright 2024 Grug Huhler.  License SPDX BSD-2-Clause.
+/* Copyright 2025 Grug Huhler.  License SPDX BSD-2-Clause.
 
 Top level module of simple SoC based on picorv32
 
@@ -26,12 +26,16 @@ In this SoC, slave (target) device has signals:
 //`define USE_LA
 
 module top (
-            input wire        clk_in,  // Must be 27 MHz
+            input wire        clk_in, // Must be 27 MHz
             input wire        reset_button,
             input wire        button2,
 `ifdef BOARD_20K
             output wire       ws2812b_din,
 `endif
+            input wire        sd_miso,
+            output wire       sd_cs,
+            output wire       sd_mosi,
+            output wire       sd_clk,
             input wire        uart_rx,
             output wire       uart_tx,
 `ifdef USE_LA
@@ -101,6 +105,9 @@ module top (
    wire                       ws2812b_sel;
    wire                       ws2812b_ready;
 `endif
+   wire                       sd_spi_sel;
+   wire                       sd_spi_ready;
+   wire [31:0]                sd_spi_data_o;
    // default_sel causes a response when nothing else does
    wire                       default_sel;
    reg                        default_ready;
@@ -120,7 +127,7 @@ module top (
 `endif
 
    // Set clk's frequency to CLK_FREQ from c_code/Makefile
-   Gowin_rPLL #(.IDIV_SEL(IDIV_SEL), .FBDIV_SEL(FBDIV_SEL), .ODIV_SEL(ODIV_SEL)) (
+   Gowin_rPLL #(.IDIV_SEL(IDIV_SEL), .FBDIV_SEL(FBDIV_SEL), .ODIV_SEL(ODIV_SEL)) main_pll (
       .clkout(clk),
       .clkin(clk_in)
    );
@@ -132,6 +139,7 @@ module top (
    //    UART 80000008 - 8000000f
    //    CDT  80000010 - 80000013
    // ws2812b 80000020 - 80000023  (20k only)
+   // sd_spi  80000030 - 8000003f
 
    assign sram_sel = mem_valid && (mem_addr < MEMBYTES);
 `ifdef BOARD_9K
@@ -143,6 +151,7 @@ module top (
 `ifdef BOARD_20K
    assign ws2812b_sel = mem_valid && (mem_addr == 32'h80000020);
 `endif
+   assign sd_spi_sel = mem_valid && ((mem_addr & 32'hfffffff0) == 32'h80000030);
 
    // Core can proceed based on which slave was targetted and is now ready.
    assign mem_ready = mem_valid &
@@ -153,7 +162,7 @@ module top (
 `ifdef BOARD_20K
         ws2812b_ready |
 `endif
-        default_ready);
+        sd_spi_sel | default_ready);
 
    // Select which slave's output data is to be fed to core.
    assign mem_rdata = sram_sel    ? sram_data_o :
@@ -162,6 +171,7 @@ module top (
 `ifdef BOARD_9K
                       uflash_sel  ? uflash_data_o :
 `endif
+                      sd_spi_sel  ? sd_spi_data_o :
                       cdt_sel     ? cdt_data_o  : 32'hdeadbeef;
 
    assign leds = ~leds_data_o[5:0]; // Connect to the LEDs off the FPGA
@@ -169,14 +179,14 @@ module top (
    // The default devices responds to accesses to addresses that don't
    // map to any device.
 
-   assign default_sel = mem_valid & !sram_sel & !leds_sel & ~uart_sel &
+   assign default_sel = mem_valid & !sram_sel & !leds_sel & !uart_sel &
 `ifdef BOARD_9K
-                       ~uflash_sel &
+                       !uflash_sel &
 `endif
 `ifdef BOARD_20K
-                       ~ws2812b_sel &
+                       !ws2812b_sel &
 `endif
-                       ~cdt_sel;
+                       !sd_spi_sel & !cdt_sel;
 
    always @(posedge clk or negedge reset_n)
      if (!reset_n)
@@ -277,6 +287,22 @@ module top (
          .pulse(button2_pulse)
       );
 
+    sd_spi_helper sd_spi_controller
+      (
+         .clk(clk),
+         .reset_n(reset_n),
+         .sd_spi_sel(sd_spi_sel),
+         .addr(mem_addr[3:2]),
+         .sd_spi_data_i(mem_wdata[7:0]),
+         .we(mem_wstrb[0]),
+         .sd_spi_ready(sd_spi_ready),
+         .sd_spi_data_o(sd_spi_data_o),
+         .sd_miso(sd_miso),
+         .sd_mosi(sd_mosi),
+         .sd_cs(sd_cs),
+         .sd_clk(sd_clk)
+       );
+   
    picorv32
      #(
        .STACKADDR(STACKADDR),

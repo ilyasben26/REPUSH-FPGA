@@ -1,14 +1,16 @@
-/* Copyright 2024 Grug Huhler.  License SPDX BSD-2-Clause.
+/* Copyright 2025 Grug Huhler.  License SPDX BSD-2-Clause.
 
    This is a test program for the simple SoC based on the PicoRV32 core.
    It can be used on either the Tang Nano 9K or the Tang Nano 20K, but
    only the former contains user flash.
 */
 
+#include <stdint.h>
 #include "leds.h"
 #include "uart.h"
 #include "countdown_timer.h"
 #include "readtime.h"
+#include "sd_card_cgpt.h"
 #if defined(BOARD_9K)
 #include "uflash.h"
 #include "xorshift32.h"
@@ -292,6 +294,55 @@ void check_all_flash(void)
 }
 #endif
 
+void toggle_spi(void)
+{
+  sd_spi_use_helper = 1 - sd_spi_use_helper;
+  if (sd_spi_use_helper)
+    uart_puts("\r\nusing helper\r\n");
+  else
+    uart_puts("\r\nusing bit-bang\r\n");
+}
+
+void sd_card_init(void)
+{
+  if (sd_init() >= 0)
+    uart_puts("\r\nSD init OK\r\n");
+  else
+    uart_puts("\r\nSD init failed\r\n");
+}
+
+void sd_display_block(unsigned int blk)
+{
+  uint8_t *buf = (uint8_t *) mem;
+  int i;
+
+  if (sd_read_block(blk, buf) < 0) {
+    uart_puts("\r\nread failed\r\n");
+    return;
+  }
+
+  for (i = 0; i < 512/4; i++) {
+    uart_print_hex(mem[i]);
+    if (i % 8 == 7) uart_puts("\r\n");
+    else uart_putchar(' ');
+  }
+
+}
+
+void sd_set_block(unsigned int blk, unsigned int start_val)
+{
+  uint8_t *buf = (uint8_t *) mem;
+  int i;
+
+  for (i = 0; i < 512/4; i++) {
+    mem[i] = start_val++;
+  }
+
+  if (sd_write_block(blk, buf) < 0) {
+    uart_puts("\r\nwrite failed\r\n");
+    return;
+  }
+}
 
 void help(void)
 {
@@ -311,6 +362,10 @@ void help(void)
   uart_puts("rc            : read clock low\r\n");
   uart_puts("rd            : read clock hi:low\r\n");
   uart_puts("he            : print help\r\n");
+  uart_puts("si            : soft reset SD card-- do first\r\n");
+  uart_puts("sr            : read specified block from SD\r\n");
+  uart_puts("sw            : write specified block of SD\r\n");
+  uart_puts("sx            : Toggle using SD SPI helper\r\n");
   uart_puts("bi            : cause bus error\r\n");
   uart_puts("ii            : cause illegal instruction\r\n");
   uart_puts("mi            : set IRQ mask\r\n");
@@ -484,6 +539,10 @@ struct command {
   {"rc", 0, .u.func0=read_clock},
   {"rd", 0, .u.func0=read_clock_ll},
   {"he", 0, .u.func0=help},
+  {"sx", 0, .u.func0=toggle_spi},
+  {"si", 0, .u.func0=sd_card_init},
+  {"sr", 1, .u.func1=sd_display_block},
+  {"sw", 2, .u.func2=sd_set_block},
   {"bi", 0, .u.func0=buserr},
   {"ii", 0, .u.func0=illegal},
   {"mi", 1, .u.func1=do_maskirq_instr},

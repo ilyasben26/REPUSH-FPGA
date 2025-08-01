@@ -35,7 +35,7 @@
 
 
 # Change memory size here
-SRAM_ADDR_WIDTH = 12
+SRAM_ADDR_WIDTH = 13
 
 # CLK_FREQ tells both software and Verilog the clock speed.  Change it
 # here in this makefile only.  Program conv_to_init finds rPLL parameters
@@ -63,14 +63,14 @@ COMMONFLAGS = -march=rv32i2p0 -mabi=ilp32
 CFLAGS = -mno-save-restore $(COMMONFLAGS) -nostartfiles -nostdlib -static -O1 -D$(BOARD)
 CPPFLAGS = -D$(BOARD)
 ASFLAGS = --defsym SRAM_ADDR_WIDTH=$(SRAM_ADDR_WIDTH) $(COMMONFLAGS)
-LIBS = /usr/lib/gcc/riscv64-unknown-elf/10.2.0/rv32i/ilp32/libgcc.a
+LIBS = -lgcc
 
 CC = riscv64-unknown-elf-gcc
 OBJCOPY = riscv64-unknown-elf-objcopy
 OBJDUMP = riscv64-unknown-elf-objdump
 AS = riscv64-unknown-elf-as
 
-COMMON_CSRCS = main.c countdown_timer.c uart.c leds.c
+COMMON_CSRCS = main.c countdown_timer.c uart.c leds.c sd_card_cgpt.c
 
 NANO9K_CSRCS = uflash.c xorshift32.c
 NANO20K_CSRCS = ws2812b.c
