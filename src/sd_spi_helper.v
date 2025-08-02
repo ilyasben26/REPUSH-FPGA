@@ -31,11 +31,11 @@ module sd_spi_helper
    output wire        sd_clk,
    output wire        sd_cs
    );
-   
+
    `include "sys_parameters.v" /* Gets CLK_FREQ */
    
-   /* Set desired SPI speed here.  I did not test past 400KHz */
-   localparam         SPI_FREQ=2*400000; /* Twice desired SPI freqency */
+   /* Set desired SPI speed here.  I did not test past 2.25 MHz */
+   localparam         SPI_FREQ=2*2250000; /* Twice desired SPI freqency */
    localparam         CLK_FACTOR_T1=(CLK_FREQ-SPI_FREQ)/SPI_FREQ;
    /* Add 1 if not even factor */
    localparam         CLK_FACTOR=((CLK_FREQ-SPI_FREQ)%SPI_FREQ>0) ? CLK_FACTOR_T1 + 1
