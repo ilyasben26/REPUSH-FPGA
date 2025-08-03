@@ -113,11 +113,11 @@ static uint8_t spi_transfer_b(uint8_t b)
     if (b & 0x80) spi_mosi_hi(); else spi_mosi_lo();
     b <<= 1;
     spi_clk_hi();
-    delay_us(3);
+    delay_us(1);
     reply <<= 1;
     if (spi_miso_read()) reply |= 1;
     spi_clk_lo();
-    delay_us(3);
+    delay_us(1);
   }
   return reply;
 }

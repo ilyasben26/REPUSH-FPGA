@@ -1,22 +1,60 @@
                         PicoRV32 SoC
 			Grug Huhler
 
-This directory contains a simple SoC that uses the RISC-V (32-bit)
+This directory contains a simple mini-SoC that uses the RISC-V (32-bit)
 soft core from https://github.com/YosysHQ/picorv32.  File picorv32.v
-is from there, unchanged.  It is the core.
+is from there, unchanged.  It is the core.  There is also associated
+software.
 
-The project uses the license-free educational version of the Gowin FPGA
-designer IDE and tool chain.  See https://www.gowinsemi.com/en/ and register
-for an account.  Login and look for "Gowin EDA" under Products.  Get
-the educational version, not the standard version.
+The mini-SoC is built and tested on the Tang Nano 9K and 20K FPGA
+development boards.  These use FPGAs made by Gowin. They are very
+inexpensive, and bread-board friendly.  I bought mine from Amazon in
+the USA.
 
-Both the Tang Nano 9K and the Tang Nano 20K low-cost FPGA development
-boards are supported.  Each has its own IDE project file, but many of
-the Verilog files (including top.v) are shared between the projects,
-sometimes using conditional compilation.
+The project uses the Gowin FPGA designer IDE and tool chain.
 
-Quick Start
------------
+See https://www.gowinsemi.com/en/ and register for an account.  Login
+and look for "Gowin EDA" under Products.  You can use either the
+educational version or the standard version.  The former requires no
+license.  For the standard version, you must request a license
+(currently free of charge) and, I think, renew it annually.  The
+educational version is an OK choice.
+
+In my experience, the Windows version of the Gowin tools is easier to
+install and get going than the Linux version.
+
+There are separate Gowin project files for the Tang Nano 9K and the 20K,
+but many verilog files, including top.v, are shared between the projects.
+Conditional compilation is sometimes used.
+
+Of course, the mini-SoC cannot run without software.  Directory c_code
+contains example "bare-metal" type software.  Note that the software
+build process also creates some verilog files.  This means that, in
+general, you must build the software before using the Gowin IDE to
+build the FPGA image.
+
+YouTube Videos
+--------------
+
+I am an electronics hobbyist, and I document my tinkerings on YouTube
+videos.  In fact, this repository supports the YouTube videos more
+than the other way around.  I assume that most people find this
+repository in the first place because they saw one of my videos.
+
+Check out https://www.youtube.com/@electronics.tinker
+
+There is a playlist for the PicoRV32.
+
+First video about PicoRV32: https://youtu.be/cq7ETOCPIBM.  See this
+for some installation and getting started tools.  Be aware that Gowin
+sometimes updates the toolchain.  I suggest using the latest.
+
+On Linux (Ubuntu 22.04 tested), I use openFPGALoader for loading the
+bitstream file onto the FPGA.  See that first video.  The Gowin
+Programmer in the IDE works fine on Windows.
+
+Quick Start?
+------------
 
 The git has Verilog files that contain prebuilt software.  Look at
 src/global_defs.v to see which board the build is for.  If it is
@@ -26,11 +64,24 @@ For the Tang Nano 9K, you should be able to just build and run the
 Verilog.  The Tang Nano 20K is a little more complicated due to its
 more flexible clock source.  See below.
 
+But, it is best to read on...  Summary: first build the software with
+"cd c_code; make clean; make 9K|20k" and then use the Gowin IDE to
+build the verilog bitfile.  The bitfile contains the software in the
+form of SRAM initialization files.  There is no bootloader (at this
+time).
+
+On Windows, use the Gowin programmer within the IDE.  On Linux, the Gowin
+programmer has never worked for me so I use openFPGAloader (which I built
+from source).
+
+Connect a terminal emulator to the USB-serial port that the Tang Nano board
+provides.  You should see something print when the FPGA starts.
+
 Components
 ----------
 
 File top.v is the top level module and integrates the SoC's
-components which are:
+components which include:
 
 * The RISC-V core (PicoRV32).
 * SRAM controller.
@@ -57,16 +108,21 @@ components which are:
   Note that only the Tang Nano 9K contains the user flash.
 * A controller for the ws2812b "neopixel" RGB LED that is only
   only on the Tang Nano 20K
+* Interrupt support.  There is a YouTube video about this.
+* An SD card controller that uses SPI mode.  The implementation is a
+  hybrid of bit-banging and hardware support.  There is a YouTube
+  video about this.  You could adapt the pure bit-banging version to
+  any microcontroller, I think.
 
 Both the Verilog and the C code in this project are intended to be very
-simple and direct.  There are no integration abstractions.  The hope
+simple and direct.  There are few integration abstractions.  The hope
 is that the project is relatively easy to understand completely, and easy
 to add to.  Peripheral modules preset a uniform interface based on the
 PicoRV32 standard memory interface bus document at the PicoRV website
 mentioned above.
 
-Some Hardare Topics
--------------------
+Some Tang Nano Hardare Topics
+------------------------------
 
 S1 is the reset button.  Serial port: 115200, no parity, no flow control.
 The serial port is provided over the same USB port that powers the FPGA
@@ -79,30 +135,20 @@ The project requires a 27 MHz input clock to the rPLL.  On the Tang
 Nano 9K, this comes from a 27 MHz can oscillator on pin 52.
 
 On the Tang Nano 20K, the clock comes from the external clock
-generator on pin 10.  You must configure the generator to be 27
+generator on pin 10.  You *MUST* configure the generator to be 27
 Mhz. See video: https://youtu.be/I-N0brdlzzk
 
-YouTube Videos
----------------
-
-See https://www.youtube.com/@electronics.tinker/videos for many videos
-about these FPGA boards. The site has a PicoRV32 playlist.
-
-First video about PicoRV32: https://youtu.be/cq7ETOCPIBM.  See this
-for some installation and getting started tools.  Be aware that
-Gowin sometimes updates the toolchain.  I suggest using the latest.
-
-On Linux (Ubuntu 22.04), I use openFPGALoader for loading the bitstream
-file onto the FPGA.  See that first video.
 
 Software
 ---------
 
 Directory c_code contains software to run on the SoC.  See the README
-there.  The software makefile generates some Verilog files that support
-parameterization and conditional compilation of the main Verilog modules.
-Some Verilog configration is done in the software's Makefile.  Look at
-that Makefile.
+there for information on the toolchain.  The software makefile
+generates some Verilog files that support parameterization and
+conditional compilation of the main Verilog modules.  Some Verilog
+configration is done in the software's Makefile.  Look at that
+Makefile for how to set the system clock speed and the SRAM memory
+size.
 
 In particular, the software build process creates Verilog SRAM block
 initialization files.  That's how the software gets onto the FPGA.  I
@@ -118,10 +164,10 @@ https://github.com/grughuhler/picorv32_tang_nano_unified
 
 You will find all needed Gowin projects files and software source files.
 
-Look for tags that indicate later releases, often associated with a
+Look for tags that indicate releases, usually associated with a
 YouTube video.
 
-For older versions, I have used this repositories (and branches on
+For older versions, I have used these repositories (and branches on
 them):
 
   https://github.com/grughuhler/picorv32
@@ -129,3 +175,6 @@ them):
   
 I suggest avoiding these unless trying to replicate particular things from
 older videos.
+
+
+
