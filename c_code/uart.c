@@ -1,12 +1,13 @@
 /* Copyright 2024 Grug Huhler.  License SPDX BSD-2-Clause.
 */
 
+#include <stdint.h>
 #include "uart.h"
 
-#define UART_DIV ((volatile unsigned int *) 0x80000008)
-#define UART_DATA ((volatile unsigned char *) 0x8000000c)
+#define UART_DIV ((volatile uint32_t *) 0x80000008)
+#define UART_DATA ((volatile uint8_t *) 0x8000000c)
 
-void uart_set_div(unsigned int div)
+void uart_set_div(uint32_t div)
 {
   volatile int delay;
 
@@ -16,7 +17,7 @@ void uart_set_div(unsigned int div)
   for (delay = 0; delay < 200; delay++) {}
 }
 
-void uart_print_hex(unsigned int val)
+void uart_print_hex(uint32_t val)
 {
   char ch;
   int i;
@@ -30,7 +31,7 @@ void uart_print_hex(unsigned int val)
 
 char uart_getchar(void)
 {
-  unsigned char ch;
+  uint8_t ch;
 
   /* UART gives 0xff when empty */
   while ((ch = *UART_DATA) == 0xff) {}
@@ -48,9 +49,9 @@ void uart_puts(char *s)
   while (*s != 0) *UART_DATA = *s++;
 }
 
-unsigned int uart_gets(char *buf, unsigned int buf_len)
+uint32_t uart_gets(char *buf, uint32_t buf_len)
 {
-  unsigned int i;
+  uint32_t i;
   char ch;
 
   for (i = 0; i < buf_len; i++) buf[i] = 0;
@@ -70,9 +71,9 @@ unsigned int uart_gets(char *buf, unsigned int buf_len)
   return i;
 }
 
-unsigned int uart_get_hex(void)
+uint32_t uart_get_hex(void)
 {
-  unsigned int v;
+  uint32_t v;
   int keep_going;
   char ch;
 

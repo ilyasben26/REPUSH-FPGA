@@ -4,6 +4,6 @@
 #ifndef WS2812B_H
 #define WS2812B_H
 
-extern void set_ws2812b(unsigned int val);
+extern void set_ws2812b(uint32_t val);
 
 #endif

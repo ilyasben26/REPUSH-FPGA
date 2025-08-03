@@ -39,6 +39,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include "freq_search.h"
 
@@ -66,13 +67,13 @@ int main(int argc, char **argv)
 
   /* Get rPLL parameters for clk_freq and supported value for clk_freq */
   freq_search(BOARD_BOTH, target_clk_freq/1000000.0, &actual_freq, &idiv_sel,
-	      &fbdiv_sel, &odiv_sel);
+              &fbdiv_sel, &odiv_sel);
   clk_freq = 1000000.0*actual_freq + 0.5;
 
   if (clk_freq != target_clk_freq) {
     fprintf(stderr, "\nERROR:\n");
     fprintf(stderr, "   Clock frequency %d is not feasible.  Instead try %d\n",
-	    target_clk_freq, clk_freq);
+            target_clk_freq, clk_freq);
     fprintf(stderr, "   BUILD FAILED\n\n");
     exit(EXIT_FAILURE);
   }

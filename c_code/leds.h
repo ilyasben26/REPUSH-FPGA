@@ -4,7 +4,7 @@
 #ifndef LEDS_H
 #define LEDS_H
 
-extern void set_leds(unsigned char val);
-extern unsigned char get_leds(void);
+extern void set_leds(uint8_t val);
+extern uint8_t get_leds(void);
 
 #endif

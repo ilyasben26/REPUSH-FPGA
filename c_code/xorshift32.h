@@ -3,6 +3,6 @@
 
 /* state must be initialized non-zero. */
 
-extern unsigned int xorshift32(unsigned int *state);
+extern uint32_t xorshift32(uint32_t *state);
 
 #endif

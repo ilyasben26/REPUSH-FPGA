@@ -141,6 +141,9 @@ static uint8_t sd_cmd(uint8_t cmd, uint32_t arg, uint8_t crc)
 {
   spi_cs_lo();
   spi_transfer(0xFF);
+  /* Busy?  Should have an error indication... */
+  while (spi_transfer(0xFF) != 0xFF) {};
+
   spi_transfer(0x40 | cmd);
   spi_transfer((arg >> 24) & 0xFF);
   spi_transfer((arg >> 16) & 0xFF);

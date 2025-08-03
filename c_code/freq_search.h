@@ -18,8 +18,8 @@
  */
 
 
-extern void freq_search(const unsigned int board, const double target_freq,
-			double *actual_freq, int *idiv_sel, int *fbdiv_sel,
-			int *odiv_sel);
+extern void freq_search(const uint32_t board, const double target_freq,
+                        double *actual_freq, int *idiv_sel, int *fbdiv_sel,
+                        int *odiv_sel);
 
 #endif

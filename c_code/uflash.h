@@ -4,6 +4,6 @@
 #ifndef UFLASH_H
 #define UFLASH_H
 
-extern void erase_page_uflash(unsigned int addr);
+extern void erase_page_uflash(uint32_t addr);
 
 #endif

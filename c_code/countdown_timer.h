@@ -6,16 +6,16 @@
  * License: SPDX BSD-2-Clause.
  */
 
-extern void cdt_wbyte0(const unsigned char value);
-extern void cdt_wbyte1(const unsigned char value);
-extern void cdt_wbyte2(const unsigned char value);
-extern void cdt_wbyte3(const unsigned char value);
+extern void cdt_wbyte0(const uint8_t value);
+extern void cdt_wbyte1(const uint8_t value);
+extern void cdt_wbyte2(const uint8_t value);
+extern void cdt_wbyte3(const uint8_t value);
 
-extern void cdt_whalf0(const unsigned short value);
-extern void cdt_whalf2(const unsigned short value);
+extern void cdt_whalf0(const uint16_t value);
+extern void cdt_whalf2(const uint16_t value);
 
-extern void cdt_write(const unsigned int value);
-extern unsigned int cdt_read(void);
-extern void cdt_delay(const unsigned int value);
+extern void cdt_write(const uint32_t value);
+extern uint32_t cdt_read(void);
+extern void cdt_delay(const uint32_t value);
 #endif
 

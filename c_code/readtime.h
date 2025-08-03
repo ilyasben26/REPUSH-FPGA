@@ -10,15 +10,15 @@
 
 typedef union {
   struct {
-    unsigned int time_low;
-    unsigned int time_high;
+    uint32_t time_low;
+    uint32_t time_high;
   } s;
   unsigned long long time_val;
 } time_ll_t;
 
 static inline time_ll_t readtime_ll(void)
 {
-  unsigned int tmp;
+  uint32_t tmp;
   time_ll_t t;
 
   do {
@@ -30,9 +30,9 @@ static inline time_ll_t readtime_ll(void)
   return t;
 }
 
-static inline unsigned int readtime(void)
+static inline uint32_t readtime(void)
 {
-  unsigned int time_low;
+  uint32_t time_low;
 
   asm volatile("rdtime %0" : "=r" (time_low));
   return time_low;

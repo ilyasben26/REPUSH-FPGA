@@ -9,9 +9,10 @@
  * Reads may be 8, 16, or 32-bits wide.
  */
 
+#include <stdint.h>
 #include "uflash.h"
 
-void erase_page_uflash(unsigned int addr)
+void erase_page_uflash(uint32_t addr)
 {
   volatile unsigned char *p = (volatile unsigned char *) addr;
   

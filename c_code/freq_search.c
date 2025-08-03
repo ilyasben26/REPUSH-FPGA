@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <math.h>
 #include "freq_search.h"
@@ -977,8 +978,9 @@ static freq_table freqs_both[] = {
 
 static freq_table *tables[] = {freqs_9k, freqs_20k, freqs_both};
 
-void freq_search(const unsigned int board, const double target_freq, double *actual_freq, int *idiv_sel,
-		 int *fbdiv_sel, int *odiv_sel)
+void freq_search(const uint32_t board, const double target_freq,
+                 double *actual_freq, int *idiv_sel, int *fbdiv_sel,
+                 int *odiv_sel)
 {
   int i, index_min;
   double diff, min = 99999.0;
@@ -1006,7 +1008,7 @@ int main(int argc, char **argv)
 {
   double freq, target;
   int idiv_sel, fbdiv_sel, odiv_sel;
-  unsigned int table_index;
+  uint32_t table_index;
 
   if (argc != 3) {
     fprintf(stderr, "usage: freq_search target_freq_mhz BOARD_9K|BOARD_20K|BOARD_BOTH\n");
@@ -1028,7 +1030,7 @@ int main(int argc, char **argv)
   
   freq_search(table_index, target, &freq, &idiv_sel, &fbdiv_sel, &odiv_sel);
   printf("freq: %8.4lf idev_sel: %d fbdiv_sel: %d, odiv_sel: %d\n",
-	 freq, idiv_sel, fbdiv_sel, odiv_sel);
+         freq, idiv_sel, fbdiv_sel, odiv_sel);
   
   return EXIT_SUCCESS;
 }

@@ -20,17 +20,17 @@
 #error "BOARD NOT PROPERLY DEFINED.  Try make clean; make 9k|10k"
 #endif
 
-extern unsigned int timer_instr(unsigned int val);   /* from startup.S */
-extern unsigned int maskirq_instr(unsigned int val); /* from startup.S */
+extern uint32_t timer_instr(uint32_t val);   /* from startup.S */
+extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 
-unsigned int timer_irq_count;
-unsigned int illegal_irq_count;
-unsigned int buserr_irq_count;
-unsigned int irq3_count;
+uint32_t timer_irq_count;
+uint32_t illegal_irq_count;
+uint32_t buserr_irq_count;
+uint32_t irq3_count;
 
 #define MEMSIZE 512
-unsigned int mem[MEMSIZE];
-unsigned int test_vals[] = {0, 0xffffffff, 0xaaaaaaaa, 0x55555555, 0xdeadbeef};
+uint32_t mem[MEMSIZE];
+uint32_t test_vals[] = {0, 0xffffffff, 0xaaaaaaaa, 0x55555555, 0xdeadbeef};
 
 /* A simple memory test.  Delete this and also array mem
    above to free much of the SRAM for other things
@@ -39,7 +39,7 @@ unsigned int test_vals[] = {0, 0xffffffff, 0xaaaaaaaa, 0x55555555, 0xdeadbeef};
 int mem_test (void)
 {
   int i, test, errors;
-  unsigned int val, val_read;
+  uint32_t val, val_read;
 
   errors = 0;
   for (test = 0; test < sizeof(test_vals)/sizeof(test_vals[0]); test++) {
@@ -65,13 +65,13 @@ int mem_test (void)
 
 void endian_test(void)
 {
-  volatile unsigned int test_loc = 0;
-  volatile unsigned int *addr = &test_loc;
-  volatile unsigned char *cp0, *cp3;
+  volatile uint32_t test_loc = 0;
+  volatile uint32_t *addr = &test_loc;
+  volatile uint8_t *cp0, *cp3;
   char byte0, byte3;
-  unsigned int i, ok;
+  uint32_t i, ok;
 
-  cp0 = (volatile unsigned char *) addr;
+  cp0 = (volatile uint8_t *) addr;
   cp3 = cp0 + 3;
   *addr = 0x44332211;
   byte0 = *cp0;
@@ -81,11 +81,11 @@ void endian_test(void)
 
   ok = (byte0 == 0x11) && (byte3 == 0x44) && (i == 0xab332211);
   uart_puts("\r\nEndian test: at ");
-  uart_print_hex((unsigned int) addr);
+  uart_print_hex((uint32_t) addr);
   uart_puts(", byte0: ");
-  uart_print_hex((unsigned int) byte0);
+  uart_print_hex((uint32_t) byte0);
   uart_puts(", byte3: ");
-  uart_print_hex((unsigned int) byte3);
+  uart_print_hex((uint32_t) byte3);
   uart_puts(",\r\n     word: ");
   uart_print_hex(i);
   if (ok)
@@ -101,10 +101,10 @@ void endian_test(void)
 
 void la_wtest(void)
 {
-  unsigned int v;
-  volatile unsigned int *ip = (volatile unsigned int *) &v;
-  volatile unsigned short *sp = (volatile unsigned short *) &v;
-  volatile unsigned char *cp = (volatile unsigned char *) &v;
+  uint32_t v;
+  volatile uint32_t *ip = (volatile uint32_t *) &v;
+  volatile uint16_t *sp = (volatile uint16_t *) &v;
+  volatile uint8_t *cp = (volatile uint8_t *) &v;
 
   *ip = 0x03020100;  // addr 0x00
 
@@ -120,10 +120,10 @@ void la_wtest(void)
 
 void la_rtest(void)
 {
-  unsigned int v;
-  volatile unsigned int *ip = (volatile unsigned int *) &v;
-  volatile unsigned short *sp = (volatile unsigned short *) &v;
-  volatile unsigned char *cp = (volatile unsigned char *) &v;
+  uint32_t v;
+  volatile uint32_t *ip = (volatile uint32_t *) &v;
+  volatile uint16_t *sp = (volatile uint16_t *) &v;
+  volatile uint8_t *cp = (volatile uint8_t *) &v;
 
   *ip = 0x03020100;  // addr 0x00
 
@@ -141,8 +141,8 @@ void la_rtest(void)
 
 void countdown_timer_test(void)
 {
-  unsigned int val;
-  unsigned int test_errors = 0;
+  uint32_t val;
+  uint32_t test_errors = 0;
   
   // If register is little-endian, write to 0x80000013 should set
   // the MSB,  Does it?
@@ -166,7 +166,7 @@ void countdown_timer_test(void)
   }
 }
 
-void cycle_delay(unsigned int cycles)
+void cycle_delay(uint32_t cycles)
 {
   uart_puts("delay ");
   uart_print_hex(cycles);
@@ -177,7 +177,7 @@ void cycle_delay(unsigned int cycles)
 
 void read_led(void)
 {
-  unsigned char v;
+  uint8_t v;
   
   v = get_leds();
   uart_puts("LED = ");
@@ -187,13 +187,13 @@ void read_led(void)
 
 void incr_led(void)
 {
-  unsigned char v;
+  uint8_t v;
   
   v = get_leds();
   set_leds(v+1);
 }
 
-void set_led(unsigned int value)
+void set_led(uint32_t value)
 {
   set_leds(value);
 }
@@ -228,9 +228,9 @@ void read_clock_ll(void)
 #if defined(BOARD_9K)
 void erase_all_flash(void)
 {
-  volatile unsigned char *p = (volatile unsigned char *) 0x20000;
+  volatile uint8_t *p = (volatile uint8_t *) 0x20000;
   time_ll_t start, end;
-  unsigned int diff;
+  uint32_t diff;
   int i;
 
   start = readtime_ll();
@@ -250,10 +250,10 @@ void erase_all_flash(void)
 
 void write_all_flash(void)
 {
-  volatile unsigned int *p = (volatile unsigned int *) 0x20000;
-  unsigned int state = 1;
+  volatile uint32_t *p = (volatile uint32_t *) 0x20000;
+  uint32_t state = 1;
   time_ll_t start, end;
-  unsigned int diff;
+  uint32_t diff;
   int i;
 
   start = readtime_ll();
@@ -270,8 +270,8 @@ void write_all_flash(void)
 
 void check_all_flash(void)
 {
-  volatile unsigned int *p = (volatile unsigned int *) 0x20000;
-  unsigned int state = 1;
+  volatile uint32_t *p = (volatile uint32_t *) 0x20000;
+  uint32_t state = 1;
   int i, j, errors = 0;
 
   for (i = 0; i < 304; i++) {
@@ -279,10 +279,10 @@ void check_all_flash(void)
     uart_putchar(' ');
     for (j = 0; j < 64; j++) {
       if (*p++ != xorshift32(&state)) {
-	errors += 1;
-	uart_putchar('x');
+        errors += 1;
+        uart_putchar('x');
       } else {
-	uart_putchar('.');
+        uart_putchar('.');
       }
     }
     uart_puts("\r\n");
@@ -311,7 +311,7 @@ void sd_card_init(void)
     uart_puts("\r\nSD init failed\r\n");
 }
 
-void sd_display_block(unsigned int blk)
+void sd_display_block(uint32_t blk)
 {
   uint8_t *buf = (uint8_t *) mem;
   int i;
@@ -329,7 +329,7 @@ void sd_display_block(unsigned int blk)
 
 }
 
-void sd_set_block(unsigned int blk, unsigned int start_val)
+void sd_set_block(uint32_t blk, uint32_t start_val)
 {
   uint8_t *buf = (uint8_t *) mem;
   int i;
@@ -383,53 +383,53 @@ void help(void)
   uart_puts("   all numbers are hex\r\n");
 }
 
-void read_byte(unsigned int addr)
+void read_byte(uint32_t addr)
 {
-  volatile unsigned char *p = (volatile unsigned char *) addr;
+  volatile uint8_t *p = (volatile uint8_t *) addr;
 
   uart_print_hex(*p);
   uart_puts("\r\n");
 }
 
-void read_half(unsigned int addr)
+void read_half(uint32_t addr)
 {
-  volatile unsigned short *p = (volatile unsigned short *) addr;
+  volatile uint16_t *p = (volatile uint16_t *) addr;
 
   uart_print_hex(*p);
   uart_puts("\r\n");
 }
 
-void read_word(unsigned int addr)
+void read_word(uint32_t addr)
 {
-  volatile unsigned int *p = (volatile unsigned int *) addr;
+  volatile uint32_t *p = (volatile uint32_t *) addr;
 
   uart_print_hex(*p);
   uart_puts("\r\n");
 }
 
-void write_byte(unsigned int addr, unsigned int value)
+void write_byte(uint32_t addr, uint32_t value)
 {
-  volatile unsigned char *p = (volatile unsigned char *) addr;
+  volatile uint8_t *p = (volatile uint8_t *) addr;
 
   *p = value;
 }
 
-void write_half(unsigned int addr, unsigned int value)
+void write_half(uint32_t addr, uint32_t value)
 {
-  volatile unsigned short *p = (volatile unsigned short *) addr;
+  volatile uint16_t *p = (volatile uint16_t *) addr;
 
   *p = value;
 }
 
-void write_word(unsigned int addr, unsigned int value)
+void write_word(uint32_t addr, uint32_t value)
 {
-  volatile unsigned int *p = (volatile unsigned int *) addr;
+  volatile uint32_t *p = (volatile uint32_t *) addr;
 
   *p = value;
 }
 
 #if defined(BOARD_20K)
-void change_ws2812b(unsigned int value)
+void change_ws2812b(uint32_t value)
 {
   uart_puts("setting neopixel to ");
   uart_print_hex(value);
@@ -438,7 +438,7 @@ void change_ws2812b(unsigned int value)
 }
 #endif
 
-unsigned int *irq(unsigned int *regs, unsigned int irqs)
+uint32_t *irq(uint32_t *regs, uint32_t irqs)
 {
   if ((irqs & 1) != 0) {
     timer_irq_count++;
@@ -472,9 +472,9 @@ void print_irq_counts(void)
   uart_puts("\r\n");
 }
 
-void do_timer_instr(unsigned int val)
+void do_timer_instr(uint32_t val)
 {
-  unsigned int old_val;
+  uint32_t old_val;
 
   old_val = timer_instr(val);
   uart_puts("old value was ");
@@ -482,9 +482,9 @@ void do_timer_instr(unsigned int val)
   uart_puts("\r\n");
 }
 
-void do_maskirq_instr(unsigned int val)
+void do_maskirq_instr(uint32_t val)
 {
-  unsigned int old_val;
+  uint32_t old_val;
 
   old_val = maskirq_instr(val);
   uart_puts("old value was ");
@@ -519,8 +519,8 @@ struct command {
   int num_args;
   union {
     void (*func0)(void);
-    void (*func1)(unsigned int val);
-    void (*func2)(unsigned int val1, unsigned int val2);
+    void (*func1)(uint32_t val);
+    void (*func2)(uint32_t val1, uint32_t val2);
   } u;
 } commands[] = {
   {"ct", 0, .u.func0=countdown_timer_test},
@@ -560,7 +560,7 @@ struct command {
 };
 
 
-void eat_spaces(char **buf, unsigned int *len)
+void eat_spaces(char **buf, uint32_t *len)
 {
   while (len > 0) {
     if (**buf == ' ') {
@@ -573,7 +573,7 @@ void eat_spaces(char **buf, unsigned int *len)
 
 /* Returns 1 if a number found, else 0.  Number is in *v */
 
-unsigned int get_hex(char **buf, unsigned int *len, unsigned int *v)
+uint32_t get_hex(char **buf, uint32_t *len, uint32_t *v)
 {
   int valid = 0;
   int keep_going;
@@ -606,10 +606,10 @@ unsigned int get_hex(char **buf, unsigned int *len, unsigned int *v)
 }
 
 
-void parse(char *buf, unsigned int len)
+void parse(char *buf, uint32_t len)
 {
   int i, cmd_not_ok;
-  unsigned int val1, val2;
+  uint32_t val1, val2;
 
   cmd_not_ok = 1;
   eat_spaces(&buf, &len);
@@ -621,28 +621,28 @@ void parse(char *buf, unsigned int len)
       len -= 2;
       switch (commands[i].num_args) {
       case 0:
-	commands[i].u.func0();
-	cmd_not_ok = 0;
-	break;
+        commands[i].u.func0();
+        cmd_not_ok = 0;
+        break;
       case 1:
-	eat_spaces(&buf, &len);
-	if (get_hex(&buf, &len, &val1)) {
-	  commands[i].u.func1(val1);
-	  cmd_not_ok = 0;
-	}
-	break;
+        eat_spaces(&buf, &len);
+        if (get_hex(&buf, &len, &val1)) {
+          commands[i].u.func1(val1);
+          cmd_not_ok = 0;
+        }
+        break;
       case 2:
-	eat_spaces(&buf, &len);
-	if (get_hex(&buf, &len, &val1)) {
-	  eat_spaces(&buf, &len);
-	  if (get_hex(&buf, &len, &val2)) {
-	    commands[i].u.func2(val1, val2);
-	    cmd_not_ok = 0;
-	  }
-	}
-	break;
+        eat_spaces(&buf, &len);
+        if (get_hex(&buf, &len, &val1)) {
+          eat_spaces(&buf, &len);
+          if (get_hex(&buf, &len, &val2)) {
+            commands[i].u.func2(val1, val2);
+            cmd_not_ok = 0;
+          }
+        }
+        break;
       default:
-	break;
+        break;
       }
       break;
     }
@@ -657,7 +657,7 @@ void parse(char *buf, unsigned int len)
 int main()
 {
   char buf[BUFLEN];
-  unsigned int len;
+  uint32_t len;
   
   set_leds(6);
 
