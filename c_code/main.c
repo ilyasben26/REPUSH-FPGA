@@ -5,7 +5,7 @@
    only the former contains user flash.
 */
 
-#include <stdint.h>
+#include "std_int_types.h"
 #include "leds.h"
 #include "uart.h"
 #include "countdown_timer.h"

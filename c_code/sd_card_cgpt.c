@@ -41,7 +41,7 @@
  *
  */
 
-#include <stdint.h>
+#include "std_int_types.h"
 #include "sd_card_cgpt.h"
 #include "countdown_timer.h"
 

@@ -1,7 +1,7 @@
 /* Copyright 2024 Grug Huhler.  License SPDX BSD-2-Clause.
 */
 
-#include <stdint.h>
+#include "std_int_types.h"
 #include "ws2812b.h"
 
 #define RGB_LED ((volatile uint32_t *) 0x80000020)

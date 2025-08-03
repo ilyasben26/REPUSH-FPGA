@@ -6,7 +6,7 @@
    state must be initialized non-zero.
 */
 
-#include <stdint.h>
+#include "std_int_types.h"
 
 uint32_t xorshift32(uint32_t *state)
 {

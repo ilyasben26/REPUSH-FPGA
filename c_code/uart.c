@@ -1,7 +1,7 @@
 /* Copyright 2024 Grug Huhler.  License SPDX BSD-2-Clause.
 */
 
-#include <stdint.h>
+#include "std_int_types.h"
 #include "uart.h"
 
 #define UART_DIV ((volatile uint32_t *) 0x80000008)

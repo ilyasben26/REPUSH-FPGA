@@ -59,16 +59,27 @@ BOARD = ERROR
 endif
 endif
 
+PREFIX=riscv64-unknown-elf
+CC = $(PREFIX)-gcc
+OBJCOPY = $(PREFIX)-objcopy
+OBJDUMP = $(PREFIX)-objdump
+AS = $(PREFIX)-as
+
+GCCVERSION = $(shell $(PREFIX)-gcc -dumpversion)
+
 COMMONFLAGS = -march=rv32i2p0 -mabi=ilp32
-CFLAGS = -mno-save-restore $(COMMONFLAGS) -nostartfiles -nostdlib -static -O1 -D$(BOARD)
+CFLAGS = -mno-save-restore $(COMMONFLAGS) -nostartfiles -nostdlib -static \
+	-O1 -D$(BOARD)
 CPPFLAGS = -D$(BOARD)
 ASFLAGS = --defsym SRAM_ADDR_WIDTH=$(SRAM_ADDR_WIDTH) $(COMMONFLAGS)
-LIBS = -lgcc
 
-CC = riscv64-unknown-elf-gcc
-OBJCOPY = riscv64-unknown-elf-objcopy
-OBJDUMP = riscv64-unknown-elf-objdump
-AS = riscv64-unknown-elf-as
+ifeq ($(GCCVERSION), 10.2.0)
+# This is a hack for Ubuntu 22.04 whose riscv gcc appears to have
+# problems that are resolved in laer gcc version.
+LIBS = /usr/lib/gcc/riscv64-unknown-elf/10.2.0/rv32i/ilp32/libgcc.a
+else
+LIBS = -lgcc
+endif
 
 COMMON_CSRCS = main.c countdown_timer.c uart.c leds.c sd_card_cgpt.c
 
@@ -85,7 +96,6 @@ ALL_CSRCS = $(COMMON_CSRCS) $(NANO9K_CSRCS) $(NANO20K_CSRCS)
 	rm -f $@.$$$$
 
 default:
-	echo $(MAKECMDGOALS)
 	@echo "Use make 9k or make 20k"
 	@echo "The Verilog build will use files from whichever"
 	@echo "was build most recently"
@@ -111,8 +121,6 @@ conv_to_init: conv_to_init.c freq_search.c freq_search.h
 
 startup.o: startup.S
 	$(CC) $(CFLAGS) -DSRAM_ADDR_WIDTH=$(SRAM_ADDR_WIDTH) -c startup.S
-
-#/*	$(CC) $(ASFLAGS) -o startup.o startup.S*/
 
 prog_9k.elf: startup.o $(COMMON_CSRCS:.c=.o) $(NANO9K_CSRCS:.c=.o)
 	$(CC) $(CFLAGS) -Tlink_cmd.ld -o prog_9k.elf startup.o \
@@ -141,5 +149,6 @@ prog_20k.hex: prog_20k.bin conv_to_init
 	od -v -Ax -t x4 prog_20k.bin > prog_20k.hex
 
 clean:
-	rm -f prog_9k.elf prog_9k.hex prog_9k.bin prog_20k.elf prog_20k.hex prog_20k.bin \
-	      startup.o $(ALL_CSRCS:.c=.d) $(ALL_CSRCS:.c=.o) conv_to_init
+	rm -f prog_9k.elf prog_9k.hex prog_9k.bin prog_20k.elf prog_20k.hex \
+	      prog_20k.bin startup.o $(ALL_CSRCS:.c=.d) $(ALL_CSRCS:.c=.o) \
+              conv_to_init

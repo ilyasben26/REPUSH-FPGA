@@ -3,7 +3,7 @@
  * License: SPDX BSD-2-Clause.
  */
 
-#include <stdint.h>
+#include "std_int_types.h"
 #include "countdown_timer.h"
 
 #define CDT_COUNTER ((volatile uint32_t *) 0x80000010)

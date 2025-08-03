@@ -9,7 +9,7 @@
  * Reads may be 8, 16, or 32-bits wide.
  */
 
-#include <stdint.h>
+#include "std_int_types.h"
 #include "uflash.h"
 
 void erase_page_uflash(uint32_t addr)
