@@ -11,6 +11,7 @@
 #include "countdown_timer.h"
 #include "readtime.h"
 #include "sd_card_cgpt.h"
+#include "monocypher.h"
 #if defined(BOARD_9K)
 #include "uflash.h"
 #include "xorshift32.h"
@@ -374,6 +375,41 @@ void hello_world(void)
   uart_puts("\r\n");
 }
 
+void uart_print_hex_byte(uint8_t v)
+{
+  char ch;
+
+  ch = (v >> 4) & 0xf;
+  uart_putchar("0123456789abcdef"[(uint8_t)ch]);
+  ch = v & 0xf;
+  uart_putchar("0123456789abcdef"[(uint8_t)ch]);
+}
+
+void hash_uart_line(void)
+{
+  char msg[64];
+  uint8_t hash[32];
+  uint32_t len;
+  int i;
+
+  uart_puts("text> ");
+  len = uart_gets(msg, sizeof(msg));
+  if (len == 0)
+  {
+    uart_puts("cancelled\r\n");
+    return;
+  }
+
+  crypto_blake2b(hash, sizeof(hash), (const uint8_t *)msg, len);
+
+  uart_puts("blake2b-256: ");
+  for (i = 0; i < sizeof(hash); i++)
+  {
+    uart_print_hex_byte(hash[i]);
+  }
+  uart_puts("\r\n");
+}
+
 void help(void)
 {
   uart_puts("ct            : test countdown timer\r\n");
@@ -410,6 +446,7 @@ void help(void)
   uart_puts("wb addr value : write byte\r\n");
   uart_puts("wh addr value : write half word\r\n");
   uart_puts("ww addr value : write word\r\n");
+  uart_puts("hb            : hash input text with blake2b-256\r\n");
   uart_puts("hl            : print Hello World\r\n");
   uart_puts("   all numbers are hex\r\n");
 }
@@ -593,6 +630,7 @@ struct command
     {"wb", 2, .u.func2 = write_byte}, // addr, val
     {"wh", 2, .u.func2 = write_half}, // addr, val
     {"ww", 2, .u.func2 = write_word}, // addr, val
+    {"hb", 0, .u.func0 = hash_uart_line},
     {"hl", 0, .u.func0 = hello_world}};
 
 void eat_spaces(char **buf, uint32_t *len)

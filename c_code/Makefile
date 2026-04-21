@@ -59,6 +59,10 @@ BOARD = ERROR
 endif
 endif
 
+ifeq ($(BOARD),BOARD_20K)
+SRAM_ADDR_WIDTH = 14
+endif
+
 PREFIX=riscv64-unknown-elf
 CC = $(PREFIX)-gcc
 OBJCOPY = $(PREFIX)-objcopy
@@ -69,8 +73,9 @@ GCCVERSION = $(shell $(PREFIX)-gcc -dumpversion)
 
 COMMONFLAGS = -march=rv32i2p0 -mabi=ilp32
 CFLAGS = -mno-save-restore $(COMMONFLAGS) -nostartfiles -nostdlib -static \
-	-O1 -D$(BOARD)
-CPPFLAGS = -D$(BOARD)
+	-Os -ffunction-sections -fdata-sections -D$(BOARD) -I../monocypher-4.0.2/src
+CPPFLAGS = -D$(BOARD) -I../monocypher-4.0.2/src
+LDFLAGS = -Wl,--gc-sections
 ASFLAGS = --defsym SRAM_ADDR_WIDTH=$(SRAM_ADDR_WIDTH) $(COMMONFLAGS)
 
 ifeq ($(GCCVERSION), 10.2.0)
@@ -81,7 +86,8 @@ else
 LIBS = -lgcc
 endif
 
-COMMON_CSRCS = main.c countdown_timer.c uart.c leds.c sd_card_cgpt.c
+COMMON_CSRCS = main.c countdown_timer.c uart.c leds.c sd_card_cgpt.c mem_compat.c
+COMMON_COBJS = monocypher.o
 
 NANO9K_CSRCS = uflash.c xorshift32.c
 NANO20K_CSRCS = ws2812b.c
@@ -122,9 +128,9 @@ conv_to_init: conv_to_init.c freq_search.c freq_search.h
 startup.o: startup.S
 	$(CC) $(CFLAGS) -DSRAM_ADDR_WIDTH=$(SRAM_ADDR_WIDTH) -c startup.S
 
-prog_9k.elf: startup.o $(COMMON_CSRCS:.c=.o) $(NANO9K_CSRCS:.c=.o)
-	$(CC) $(CFLAGS) -Tlink_cmd.ld -o prog_9k.elf startup.o \
-              $(COMMON_CSRCS:.c=.o) $(NANO9K_CSRCS:.c=.o) $(LIBS)
+prog_9k.elf: startup.o $(COMMON_CSRCS:.c=.o) $(COMMON_COBJS) $(NANO9K_CSRCS:.c=.o)
+	$(CC) $(CFLAGS) $(LDFLAGS) -Tlink_cmd.ld -o prog_9k.elf startup.o \
+			  $(COMMON_CSRCS:.c=.o) $(COMMON_COBJS) $(NANO9K_CSRCS:.c=.o) $(LIBS)
 
 prog_9k.bin: prog_9k.elf conv_to_init 
 	$(OBJCOPY) prog_9k.elf -O binary prog_9k.bin
@@ -135,9 +141,12 @@ prog_9k.bin: prog_9k.elf conv_to_init
 prog_9k.hex: prog_9k.bin conv_to_init
 	od -v -Ax -t x4 prog_9k.bin > prog_9k.hex
 
-prog_20k.elf: startup.o $(COMMON_CSRCS:.c=.o) $(NANO20K_CSRCS:.c=.o)
-	$(CC) $(CFLAGS) -Tlink_cmd.ld -o prog_20k.elf startup.o \
-              $(COMMON_CSRCS:.c=.o) $(NANO20K_CSRCS:.c=.o) $(LIBS)
+prog_20k.elf: startup.o $(COMMON_CSRCS:.c=.o) $(COMMON_COBJS) $(NANO20K_CSRCS:.c=.o)
+	$(CC) $(CFLAGS) $(LDFLAGS) -Tlink_cmd.ld -o prog_20k.elf startup.o \
+              $(COMMON_CSRCS:.c=.o) $(COMMON_COBJS) $(NANO20K_CSRCS:.c=.o) $(LIBS)
+
+monocypher.o: ../monocypher-4.0.2/src/monocypher.c ../monocypher-4.0.2/src/monocypher.h
+	$(CC) -c $(CFLAGS) $< -o $@
 
 prog_20k.bin: prog_20k.elf conv_to_init 
 	$(OBJCOPY) prog_20k.elf -O binary prog_20k.bin
@@ -151,4 +160,4 @@ prog_20k.hex: prog_20k.bin conv_to_init
 clean:
 	rm -f prog_9k.elf prog_9k.hex prog_9k.bin prog_20k.elf prog_20k.hex \
 	      prog_20k.bin startup.o $(ALL_CSRCS:.c=.d) $(ALL_CSRCS:.c=.o) \
-              conv_to_init
+	      $(COMMON_COBJS) conv_to_init
