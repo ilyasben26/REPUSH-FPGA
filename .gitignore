@@ -1,1 +1,6 @@
 impl/
+*.d
+*.o
+*.bin
+.elf
+.hex

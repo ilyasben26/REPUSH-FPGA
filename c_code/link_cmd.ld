@@ -7,6 +7,8 @@
  {
  *(.text)
  }
+ . = ALIGN(4);
+ __bss_start = .;
  .sbss :
  {
  *(.sbss)
@@ -15,6 +17,8 @@
  {
  *(.bss)
  }
+ . = ALIGN(4);
+ __bss_end = .;
  .rodata :
  {
  *(.rodata)

@@ -108,10 +108,10 @@ default:
 ifneq ($(MAKECMDGOALS),)
 ifneq ($(MAKECMDGOALS),clean)
 ifeq ($(MAKECMDGOALS),9k)
-include $(COMMON_CSRCS:.c=.d) $(NANO9K_CSRCS:.c=.d)
+-include $(COMMON_CSRCS:.c=.d) $(NANO9K_CSRCS:.c=.d)
 endif
 ifeq ($(MAKECMDGOALS),20k)
-include $(COMMON_CSRCS:.c=.d) $(NANO20K_CSRCS:.c=.d)
+-include $(COMMON_CSRCS:.c=.d) $(NANO20K_CSRCS:.c=.d)
 endif
 endif
 endif

@@ -13,6 +13,8 @@
 .global irq
 .global timer_instr
 .global maskirq_instr
+.global __bss_start
+.global __bss_end
 _start:
 	/* no more than 16 bytes here */
 	j cont_start
@@ -146,6 +148,14 @@ irq_stack:
 
 cont_start:
 	li x2, 4*(1<<SRAM_ADDR_WIDTH)
+	la t0, __bss_start
+	la t1, __bss_end
+clear_bss_loop:
+	bgeu t0, t1, clear_bss_done
+	sb zero, 0(t0)
+	addi t0, t0, 1
+	j clear_bss_loop
+clear_bss_done:
 	picorv32_maskirq_insn(zero, zero) 
 	call main
 stuck:	j stuck
