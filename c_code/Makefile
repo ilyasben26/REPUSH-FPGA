@@ -86,7 +86,7 @@ else
 LIBS = -lgcc
 endif
 
-COMMON_CSRCS = main.c countdown_timer.c uart.c leds.c sd_card_cgpt.c mem_compat.c
+COMMON_CSRCS = main.c countdown_timer.c uart.c leds.c sd_card_cgpt.c mem_compat.c puf.c
 COMMON_COBJS = monocypher.o
 
 NANO9K_CSRCS = uflash.c xorshift32.c

@@ -108,6 +108,9 @@ module top (
    wire                       sd_spi_sel;
    wire                       sd_spi_ready;
    wire [31:0]                sd_spi_data_o;
+   wire                       puf_peri_sel;
+   wire                       puf_peri_ready;
+   wire [31:0]                puf_peri_data_o;
    // default_sel causes a response when nothing else does
    wire                       default_sel;
    reg                        default_ready;
@@ -140,6 +143,7 @@ module top (
    //    CDT  80000010 - 80000013
    // ws2812b 80000020 - 80000023  (20k only)
    // sd_spi  80000030 - 8000003f
+   //     PUF 80000040 - 8000004f
 
    assign sram_sel = mem_valid && (mem_addr < MEMBYTES);
 `ifdef BOARD_9K
@@ -151,13 +155,14 @@ module top (
 `ifdef BOARD_20K
    assign ws2812b_sel = mem_valid && (mem_addr == 32'h80000020);
 `endif
-   assign sd_spi_sel = mem_valid && ((mem_addr & 32'hfffffff0) == 32'h80000030);
+   assign sd_spi_sel   = mem_valid && ((mem_addr & 32'hfffffff0) == 32'h80000030);
+   assign puf_peri_sel = mem_valid && ((mem_addr & 32'hfffffff0) == 32'h80000040);
 
    // Core can proceed based on which slave was targetted and is now ready.
    assign mem_ready = mem_valid &
-      (sram_ready | leds_ready | uart_ready | cdt_ready | 
+      (sram_ready | leds_ready | uart_ready | cdt_ready | puf_peri_ready |
 `ifdef BOARD_9K
-        uflash_ready | 
+        uflash_ready |
 `endif
 `ifdef BOARD_20K
         ws2812b_ready |
@@ -165,14 +170,15 @@ module top (
         sd_spi_sel | default_ready);
 
    // Select which slave's output data is to be fed to core.
-   assign mem_rdata = sram_sel    ? sram_data_o :
-                      leds_sel    ? leds_data_o :
-                      uart_sel    ? uart_data_o :
+   assign mem_rdata = sram_sel      ? sram_data_o :
+                      leds_sel      ? leds_data_o :
+                      uart_sel      ? uart_data_o :
 `ifdef BOARD_9K
-                      uflash_sel  ? uflash_data_o :
+                      uflash_sel    ? uflash_data_o :
 `endif
-                      sd_spi_sel  ? sd_spi_data_o :
-                      cdt_sel     ? cdt_data_o  : 32'hdeadbeef;
+                      sd_spi_sel    ? sd_spi_data_o :
+                      puf_peri_sel  ? puf_peri_data_o :
+                      cdt_sel       ? cdt_data_o  : 32'hdeadbeef;
 
    assign leds = ~leds_data_o[5:0]; // Connect to the LEDs off the FPGA
 
@@ -186,7 +192,7 @@ module top (
 `ifdef BOARD_20K
                        !ws2812b_sel &
 `endif
-                       !sd_spi_sel & !cdt_sel;
+                       !sd_spi_sel & !puf_peri_sel & !cdt_sel;
 
    always @(posedge clk or negedge reset_n)
      if (!reset_n)
@@ -302,7 +308,19 @@ module top (
          .sd_cs(sd_cs),
          .sd_clk(sd_clk)
        );
-   
+
+   puf_peripheral puf_peri
+     (
+      .clk      (clk),
+      .reset_n  (reset_n),
+      .puf_sel  (puf_peri_sel),
+      .addr     (mem_addr[3:0]),
+      .data_i   (mem_wdata),
+      .wstrb    (mem_wstrb),
+      .puf_ready(puf_peri_ready),
+      .data_o   (puf_peri_data_o)
+      );
+
    picorv32
      #(
        .STACKADDR(STACKADDR),

@@ -4,3 +4,4 @@ impl/
 *.bin
 *.elf
 *.hex
+PUF-FPGA/

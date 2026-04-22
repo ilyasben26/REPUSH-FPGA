@@ -10,6 +10,7 @@
         <File path="src/gowin_rpll_20k/gowin_rpll.v" type="file.verilog" enable="1"/>
         <File path="src/leds.v" type="file.verilog" enable="1"/>
         <File path="src/picorv32.v" type="file.verilog" enable="1"/>
+        <File path="src/puf_peripheral.v" type="file.verilog" enable="1"/>
         <File path="src/reset.v" type="file.verilog" enable="1"/>
         <File path="src/sd_spi_helper.v" type="file.verilog" enable="1"/>
         <File path="src/simpleuart.v" type="file.verilog" enable="1"/>
@@ -19,6 +20,12 @@
         <File path="src/uart_wrap.v" type="file.verilog" enable="1"/>
         <File path="src/ws2812b.v" type="file.verilog" enable="1"/>
         <File path="src/ws2812b_tgt.v" type="file.verilog" enable="1"/>
+        <File path="PUF-FPGA/src/CHOICE_PUF.vhd" type="file.vhdl" enable="1"/>
+        <File path="PUF-FPGA/src/CHOICE_PUF_gen.vhd" type="file.vhdl" enable="1"/>
+        <File path="PUF-FPGA/src/PUF_controller.vhd" type="file.vhdl" enable="1"/>
+        <File path="PUF-FPGA/src/pattern_ctrl_unit.vhd" type="file.vhdl" enable="1"/>
+        <File path="PUF-FPGA/src/request_ctrl_unit.vhd" type="file.vhdl" enable="1"/>
+        <File path="PUF-FPGA/src/tune_ctrl_unit.vhd" type="file.vhdl" enable="1"/>
         <File path="src/picorv32_20k.cst" type="file.cst" enable="1"/>
         <File path="src/picorv32_20k.sdc" type="file.sdc" enable="1"/>
         <File path="src/picorv32_20k.rao" type="file.gao" enable="0"/>

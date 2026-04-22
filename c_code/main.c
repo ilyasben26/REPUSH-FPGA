@@ -12,6 +12,7 @@
 #include "readtime.h"
 #include "sd_card_cgpt.h"
 #include "monocypher.h"
+#include "puf.h"
 #if defined(BOARD_9K)
 #include "uflash.h"
 #include "xorshift32.h"
@@ -448,6 +449,12 @@ void help(void)
   uart_puts("ww addr value : write word\r\n");
   uart_puts("hb            : hash input text with blake2b-256\r\n");
   uart_puts("hl            : print Hello World\r\n");
+  uart_puts("pr            : PUF single measurement (hi:lo hex)\r\n");
+  uart_puts("pt upper lower: PUF set ASR tuning (each 0..7)\r\n");
+  uart_puts("pc top bottom : PUF set choice + patterns (top>bottom, 0..3)\r\n");
+  uart_puts("pq count      : PUF majority vote over count samples\r\n");
+  uart_puts("ph tc,tt,bc,bt: PUF challenge (top_choice,top_tune,bottom_choice,bottom_tune)\r\n");
+  uart_puts("pa            : scan all 384 PUF challenges, count non-all-1s\r\n");
   uart_puts("   all numbers are hex\r\n");
 }
 
@@ -594,6 +601,7 @@ struct command
     void (*func0)(void);
     void (*func1)(uint32_t val);
     void (*func2)(uint32_t val1, uint32_t val2);
+    void (*func4)(uint32_t val1, uint32_t val2, uint32_t val3, uint32_t val4);
   } u;
 } commands[] = {
     {"ct", 0, .u.func0 = countdown_timer_test},
@@ -631,13 +639,34 @@ struct command
     {"wh", 2, .u.func2 = write_half}, // addr, val
     {"ww", 2, .u.func2 = write_word}, // addr, val
     {"hb", 0, .u.func0 = hash_uart_line},
-    {"hl", 0, .u.func0 = hello_world}};
+    {"hl", 0, .u.func0 = hello_world},
+    {"pr", 0, .u.func0 = puf_request},
+    {"pt", 2, .u.func2 = puf_set_tune},
+    {"pc", 2, .u.func2 = puf_set_choice},
+    {"pq", 1, .u.func1 = puf_measure},
+    {"ph", 4, .u.func4 = puf_challenge},
+    {"pa", 0, .u.func0 = puf_scan}};
 
 void eat_spaces(char **buf, uint32_t *len)
 {
   while (len > 0)
   {
     if (**buf == ' ')
+    {
+      *buf += 1;
+      *len -= 1;
+    }
+    else
+      break;
+  }
+}
+
+/* Skip spaces and commas — used between 4-argument commands. */
+void eat_delimiters(char **buf, uint32_t *len)
+{
+  while (*len > 0)
+  {
+    if (**buf == ' ' || **buf == ',')
     {
       *buf += 1;
       *len -= 1;
@@ -692,7 +721,7 @@ uint32_t get_hex(char **buf, uint32_t *len, uint32_t *v)
 void parse(char *buf, uint32_t len)
 {
   int i, cmd_not_ok;
-  uint32_t val1, val2;
+  uint32_t val1, val2, val3, val4;
 
   cmd_not_ok = 1;
   eat_spaces(&buf, &len);
@@ -727,6 +756,26 @@ void parse(char *buf, uint32_t len)
           {
             commands[i].u.func2(val1, val2);
             cmd_not_ok = 0;
+          }
+        }
+        break;
+      case 4:
+        eat_delimiters(&buf, &len);
+        if (get_hex(&buf, &len, &val1))
+        {
+          eat_delimiters(&buf, &len);
+          if (get_hex(&buf, &len, &val2))
+          {
+            eat_delimiters(&buf, &len);
+            if (get_hex(&buf, &len, &val3))
+            {
+              eat_delimiters(&buf, &len);
+              if (get_hex(&buf, &len, &val4))
+              {
+                commands[i].u.func4(val1, val2, val3, val4);
+                cmd_not_ok = 0;
+              }
+            }
           }
         }
         break;
