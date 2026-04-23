@@ -3,6 +3,40 @@
 #include "sd_card_cgpt.h"
 #include "monocypher.h"
 #include "puf.h"
+#include "readtime.h"
+
+/* ---- LR-PUF State integration declarations ---- */
+
+#define NUM_STATES 11
+#define HASH_SIZE 32
+#define DOMAIN_STR_LEN 64
+#define MAX_POSSIBLE_CHALLENGES 384
+
+typedef struct
+{
+    uint8_t hash_value[HASH_SIZE];
+    uint32_t is_initialized;
+    uint32_t tc_last, tt_last, bc_last, bt_last;
+    char domain_name[DOMAIN_STR_LEN];
+} puf_state_t;
+
+static puf_state_t lr_states[NUM_STATES];
+
+static uint16_t mem_valid_challenges[MAX_POSSIBLE_CHALLENGES];
+static uint32_t num_mem_valid_challenges = 0;
+
+static uint16_t pack_challenge(uint32_t tc, uint32_t tt, uint32_t bc, uint32_t bt)
+{
+    return (uint16_t)(((tc & 0x3) << 8) | ((tt & 0x7) << 5) | ((bc & 0x3) << 3) | (bt & 0x7));
+}
+
+static void unpack_challenge(uint16_t packed, uint32_t *tc, uint32_t *tt, uint32_t *bc, uint32_t *bt)
+{
+    *tc = (packed >> 8) & 0x3;
+    *tt = (packed >> 5) & 0x7;
+    *bc = (packed >> 3) & 0x3;
+    *bt = packed & 0x7;
+}
 
 /*
  * Register addresses for the PUF peripheral (base 0x80000040).
@@ -25,24 +59,26 @@
  *   0x5 — BOTTOM_PATTERN payload_hi[0]=in_bit, payload_lo=32-bit pattern
  */
 
-#define PUF_PAYLOAD_HI  ((volatile uint32_t *) 0x80000040u)
-#define PUF_PAYLOAD_LO  ((volatile uint32_t *) 0x80000044u)
-#define PUF_TRIGGER     ((volatile uint32_t *) 0x80000048u)
-#define PUF_STATUS      ((volatile uint32_t *) 0x80000048u)
-#define PUF_RESP_HI     ((volatile uint32_t *) 0x80000040u)
-#define PUF_RESP_LO     ((volatile uint32_t *) 0x80000044u)
+#define PUF_PAYLOAD_HI ((volatile uint32_t *)0x80000040u)
+#define PUF_PAYLOAD_LO ((volatile uint32_t *)0x80000044u)
+#define PUF_TRIGGER ((volatile uint32_t *)0x80000048u)
+#define PUF_STATUS ((volatile uint32_t *)0x80000048u)
+#define PUF_RESP_HI ((volatile uint32_t *)0x80000040u)
+#define PUF_RESP_LO ((volatile uint32_t *)0x80000044u)
 
 static void puf_send_cmd(uint32_t phi, uint32_t plo)
 {
     *PUF_PAYLOAD_HI = phi;
     *PUF_PAYLOAD_LO = plo;
-    *PUF_TRIGGER    = 1u;
+    *PUF_TRIGGER = 1u;
 }
 
 static void puf_do_req(uint32_t *hi, uint32_t *lo)
 {
     puf_send_cmd(0x10000000u, 0x00000000u);
-    while (!(*PUF_STATUS & 1u)) {}
+    while (!(*PUF_STATUS & 1u))
+    {
+    }
     *hi = *PUF_RESP_HI;
     *lo = *PUF_RESP_LO;
 }
@@ -87,20 +123,26 @@ void puf_set_choice(uint32_t top, uint32_t bottom)
      *   bottom_choice % 2 == 0 → bottom uses 0xAAAAAAAA, in_bit=0
      *   bottom_choice % 2 != 0 → bottom uses 0x55555555, in_bit=1
      */
-    if (top % 2u != 0u) {
+    if (top % 2u != 0u)
+    {
         top_pattern = 0xAAAAAAAAu;
-        top_phi     = 0x40000000u;  /* in_bit = 0 */
-    } else {
+        top_phi = 0x40000000u; /* in_bit = 0 */
+    }
+    else
+    {
         top_pattern = 0x55555555u;
-        top_phi     = 0x40000001u;  /* in_bit = 1 */
+        top_phi = 0x40000001u; /* in_bit = 1 */
     }
 
-    if (bottom % 2u == 0u) {
+    if (bottom % 2u == 0u)
+    {
         bot_pattern = 0xAAAAAAAAu;
-        bot_phi     = 0x50000000u;  /* in_bit = 0 */
-    } else {
+        bot_phi = 0x50000000u; /* in_bit = 0 */
+    }
+    else
+    {
         bot_pattern = 0x55555555u;
-        bot_phi     = 0x50000001u;  /* in_bit = 1 */
+        bot_phi = 0x50000001u; /* in_bit = 1 */
     }
 
     puf_send_cmd(top_phi, top_pattern);
@@ -122,11 +164,27 @@ void puf_challenge(uint32_t top_choice, uint32_t top_tune,
     choice_data = ((top_choice & 3u) << 2) | (bottom_choice & 3u);
     puf_send_cmd(0x30000000u, choice_data);
 
-    if (top_choice % 2u != 0u) { top_pattern = 0xAAAAAAAAu; top_phi = 0x40000000u; }
-    else                        { top_pattern = 0x55555555u; top_phi = 0x40000001u; }
+    if (top_choice % 2u != 0u)
+    {
+        top_pattern = 0xAAAAAAAAu;
+        top_phi = 0x40000000u;
+    }
+    else
+    {
+        top_pattern = 0x55555555u;
+        top_phi = 0x40000001u;
+    }
 
-    if (bottom_choice % 2u == 0u) { bot_pattern = 0xAAAAAAAAu; bot_phi = 0x50000000u; }
-    else                          { bot_pattern = 0x55555555u; bot_phi = 0x50000001u; }
+    if (bottom_choice % 2u == 0u)
+    {
+        bot_pattern = 0xAAAAAAAAu;
+        bot_phi = 0x50000000u;
+    }
+    else
+    {
+        bot_pattern = 0x55555555u;
+        bot_phi = 0x50000001u;
+    }
 
     puf_send_cmd(top_phi, top_pattern);
     puf_send_cmd(bot_phi, bot_pattern);
@@ -144,7 +202,7 @@ void puf_challenge(uint32_t top_choice, uint32_t top_tune,
  * Mirrors the choice_combinations list in the Python gather command.
  * 6 pairs × 8 top_tune × 8 bottom_tune = 384 total configurations.
  */
-static const uint8_t scan_top[]    = {1, 2, 2, 3, 3, 3};
+static const uint8_t scan_top[] = {1, 2, 2, 3, 3, 3};
 static const uint8_t scan_bottom[] = {0, 0, 1, 0, 1, 2};
 #define SCAN_TOTAL 384u
 
@@ -155,27 +213,54 @@ void puf_scan(void)
     uint32_t tt, bt;
     int ci;
 
-    for (ci = 0; ci < 6; ci++) {
+    num_mem_valid_challenges = 0;
+
+    for (ci = 0; ci < 6; ci++)
+    {
         uint32_t tc = scan_top[ci];
         uint32_t bc = scan_bottom[ci];
         uint32_t top_phi, top_pattern, bot_phi, bot_pattern;
 
         /* patterns are determined by choice index parity — set once per pair */
-        if (tc % 2u != 0u) { top_pattern = 0xAAAAAAAAu; top_phi = 0x40000000u; }
-        else                { top_pattern = 0x55555555u; top_phi = 0x40000001u; }
-        if (bc % 2u == 0u) { bot_pattern = 0xAAAAAAAAu; bot_phi = 0x50000000u; }
-        else                { bot_pattern = 0x55555555u; bot_phi = 0x50000001u; }
+        if (tc % 2u != 0u)
+        {
+            top_pattern = 0xAAAAAAAAu;
+            top_phi = 0x40000000u;
+        }
+        else
+        {
+            top_pattern = 0x55555555u;
+            top_phi = 0x40000001u;
+        }
+        if (bc % 2u == 0u)
+        {
+            bot_pattern = 0xAAAAAAAAu;
+            bot_phi = 0x50000000u;
+        }
+        else
+        {
+            bot_pattern = 0x55555555u;
+            bot_phi = 0x50000001u;
+        }
 
         puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
         puf_send_cmd(top_phi, top_pattern);
         puf_send_cmd(bot_phi, bot_pattern);
 
-        for (tt = 0; tt < 8u; tt++) {
-            for (bt = 0; bt < 8u; bt++) {
+        for (tt = 0; tt < 8u; tt++)
+        {
+            for (bt = 0; bt < 8u; bt++)
+            {
                 puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
                 puf_do_req(&hi, &lo);
                 if (hi != 0xFFFFFFFFu || lo != 0xFFFFFFFFu)
+                {
                     valid++;
+                    if (num_mem_valid_challenges < MAX_POSSIBLE_CHALLENGES)
+                    {
+                        mem_valid_challenges[num_mem_valid_challenges++] = pack_challenge(tc, tt, bc, bt);
+                    }
+                }
             }
         }
     }
@@ -200,18 +285,25 @@ void puf_measure(uint32_t count)
     for (bit = 0u; bit < 64u; bit++)
         bit_ones[bit] = 0u;
 
-    for (i = 0u; i < count; i++) {
+    for (i = 0u; i < count; i++)
+    {
         puf_do_req(&hi, &lo);
-        for (bit = 0u; bit < 32u; bit++) {
-            if ((lo >> bit) & 1u) bit_ones[bit]++;
-            if ((hi >> bit) & 1u) bit_ones[bit + 32u]++;
+        for (bit = 0u; bit < 32u; bit++)
+        {
+            if ((lo >> bit) & 1u)
+                bit_ones[bit]++;
+            if ((hi >> bit) & 1u)
+                bit_ones[bit + 32u]++;
         }
     }
 
     majority_hi = majority_lo = 0u;
-    for (bit = 0u; bit < 32u; bit++) {
-        if (bit_ones[bit]        * 2u >= count) majority_lo |= (1u << bit);
-        if (bit_ones[bit + 32u]  * 2u >= count) majority_hi |= (1u << bit);
+    for (bit = 0u; bit < 32u; bit++)
+    {
+        if (bit_ones[bit] * 2u >= count)
+            majority_lo |= (1u << bit);
+        if (bit_ones[bit + 32u] * 2u >= count)
+            majority_hi |= (1u << bit);
     }
 
     uart_puts("PUF majority (");
@@ -243,22 +335,22 @@ void puf_measure(uint32_t count)
  * The header is written last so an interrupted scan leaves no valid magic,
  * which puf_key detects and reports.
  */
-#define PUF_SD_BASE  0u
-#define PUF_SD_MAGIC 0x50554630u  /* "PUF0" */
+#define PUF_SD_BASE 0u
+#define PUF_SD_MAGIC 0x50554630u /* "PUF0" */
 
 static uint8_t sd_buf[512];
 
 static void write_u32_le(uint8_t *p, uint32_t v)
 {
     p[0] = (uint8_t)(v);
-    p[1] = (uint8_t)(v >>  8);
+    p[1] = (uint8_t)(v >> 8);
     p[2] = (uint8_t)(v >> 16);
     p[3] = (uint8_t)(v >> 24);
 }
 
 static uint32_t read_u32_le(const uint8_t *p)
 {
-    return (uint32_t)p[0]        | ((uint32_t)p[1] <<  8) |
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
@@ -271,39 +363,63 @@ void puf_save(void)
 
     uart_puts("PUF: scanning all challenges...\r\n");
 
-    for (i = 0; i < 512; i++) sd_buf[i] = 0;
+    for (i = 0; i < 512; i++)
+        sd_buf[i] = 0;
 
-    for (ci = 0; ci < 6; ci++) {
+    for (ci = 0; ci < 6; ci++)
+    {
         uint32_t tc = scan_top[ci];
         uint32_t bc = scan_bottom[ci];
         uint32_t top_phi, top_pattern, bot_phi, bot_pattern;
 
-        if (tc % 2u != 0u) { top_pattern = 0xAAAAAAAAu; top_phi = 0x40000000u; }
-        else                { top_pattern = 0x55555555u; top_phi = 0x40000001u; }
-        if (bc % 2u == 0u) { bot_pattern = 0xAAAAAAAAu; bot_phi = 0x50000000u; }
-        else                { bot_pattern = 0x55555555u; bot_phi = 0x50000001u; }
+        if (tc % 2u != 0u)
+        {
+            top_pattern = 0xAAAAAAAAu;
+            top_phi = 0x40000000u;
+        }
+        else
+        {
+            top_pattern = 0x55555555u;
+            top_phi = 0x40000001u;
+        }
+        if (bc % 2u == 0u)
+        {
+            bot_pattern = 0xAAAAAAAAu;
+            bot_phi = 0x50000000u;
+        }
+        else
+        {
+            bot_pattern = 0x55555555u;
+            bot_phi = 0x50000001u;
+        }
 
         puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
         puf_send_cmd(top_phi, top_pattern);
         puf_send_cmd(bot_phi, bot_pattern);
 
-        for (tt = 0; tt < 8u; tt++) {
-            for (bt = 0; bt < 8u; bt++) {
+        for (tt = 0; tt < 8u; tt++)
+        {
+            for (bt = 0; bt < 8u; bt++)
+            {
                 puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
                 puf_do_req(&hi, &lo);
-                if (hi != 0xFFFFFFFFu || lo != 0xFFFFFFFFu) {
+                if (hi != 0xFFFFFFFFu || lo != 0xFFFFFFFFu)
+                {
                     uint32_t slot = count % 128u;
                     sd_buf[slot * 4u + 0u] = (uint8_t)tc;
                     sd_buf[slot * 4u + 1u] = (uint8_t)tt;
                     sd_buf[slot * 4u + 2u] = (uint8_t)bc;
                     sd_buf[slot * 4u + 3u] = (uint8_t)bt;
                     count++;
-                    if (slot == 127u) {
-                        if (sd_write_block(data_block++, sd_buf) < 0) {
+                    if (slot == 127u)
+                    {
+                        if (sd_write_block(data_block++, sd_buf) < 0)
+                        {
                             uart_puts("SD write error\r\n");
                             return;
                         }
-                        for (i = 0; i < 512; i++) sd_buf[i] = 0;
+                        for (i = 0; i < 512; i++)
+                            sd_buf[i] = 0;
                     }
                 }
             }
@@ -311,18 +427,22 @@ void puf_save(void)
     }
 
     /* flush any remaining partial block */
-    if (count % 128u != 0u) {
-        if (sd_write_block(data_block, sd_buf) < 0) {
+    if (count % 128u != 0u)
+    {
+        if (sd_write_block(data_block, sd_buf) < 0)
+        {
             uart_puts("SD write error\r\n");
             return;
         }
     }
 
     /* write header last — only a fully written table gets a valid magic */
-    for (i = 0; i < 512; i++) sd_buf[i] = 0;
+    for (i = 0; i < 512; i++)
+        sd_buf[i] = 0;
     write_u32_le(sd_buf + 0, PUF_SD_MAGIC);
     write_u32_le(sd_buf + 4, count);
-    if (sd_write_block(PUF_SD_BASE, sd_buf) < 0) {
+    if (sd_write_block(PUF_SD_BASE, sd_buf) < 0)
+    {
         uart_puts("SD write error\r\n");
         return;
     }
@@ -332,10 +452,74 @@ void puf_save(void)
     uart_puts(" valid challenges to SD\r\n");
 }
 
+void puf_load_challenges(void)
+{
+    uint32_t count = 0;
+    uint32_t idx, block, offset;
+    uint32_t tc, tt, bc, bt;
+
+    /* read header block */
+    if (sd_read_block(PUF_SD_BASE, sd_buf) < 0)
+    {
+        uart_puts("SD read error\r\n");
+        return;
+    }
+    if (read_u32_le(sd_buf) != PUF_SD_MAGIC)
+    {
+        uart_puts("no PUF table on SD — run ps first\r\n");
+        return;
+    }
+    count = read_u32_le(sd_buf + 4);
+    if (count == 0u)
+    {
+        uart_puts("0 valid challenges stored\r\n");
+        return;
+    }
+    if (count > MAX_POSSIBLE_CHALLENGES)
+    {
+        count = MAX_POSSIBLE_CHALLENGES;
+    }
+
+    num_mem_valid_challenges = 0;
+    block = PUF_SD_BASE + 1u;
+
+    if (sd_read_block(block, sd_buf) < 0)
+    {
+        uart_puts("SD read error\r\n");
+        return;
+    }
+
+    for (idx = 0; idx < count; idx++)
+    {
+        uint32_t expected_block = PUF_SD_BASE + 1u + (idx / 128u);
+        if (expected_block != block)
+        {
+            block = expected_block;
+            if (sd_read_block(block, sd_buf) < 0)
+            {
+                uart_puts("SD read error\r\n");
+                return;
+            }
+        }
+
+        offset = (idx % 128u) * 4u;
+        tc = sd_buf[offset + 0u];
+        tt = sd_buf[offset + 1u];
+        bc = sd_buf[offset + 2u];
+        bt = sd_buf[offset + 3u];
+
+        mem_valid_challenges[num_mem_valid_challenges++] = pack_challenge(tc, tt, bc, bt);
+    }
+
+    uart_puts("PUF: loaded ");
+    uart_print_hex(num_mem_valid_challenges);
+    uart_puts(" valid challenges from SD to memory\r\n");
+}
+
 void puf_key(void)
 {
-    char     input[64];
-    uint8_t  hash[32];
+    char input[64];
+    uint8_t hash[32];
     uint32_t len, count, idx, block, offset;
     uint32_t tc, tt, bc, bt;
     uint32_t top_phi, top_pattern, bot_phi, bot_pattern;
@@ -343,22 +527,26 @@ void puf_key(void)
 
     uart_puts("challenge> ");
     len = uart_gets(input, sizeof(input));
-    if (len == 0) {
+    if (len == 0)
+    {
         uart_puts("cancelled\r\n");
         return;
     }
 
     /* read header block */
-    if (sd_read_block(PUF_SD_BASE, sd_buf) < 0) {
+    if (sd_read_block(PUF_SD_BASE, sd_buf) < 0)
+    {
         uart_puts("SD read error\r\n");
         return;
     }
-    if (read_u32_le(sd_buf) != PUF_SD_MAGIC) {
+    if (read_u32_le(sd_buf) != PUF_SD_MAGIC)
+    {
         uart_puts("no PUF table on SD — run ps first\r\n");
         return;
     }
     count = read_u32_le(sd_buf + 4);
-    if (count == 0u) {
+    if (count == 0u)
+    {
         uart_puts("0 valid challenges stored\r\n");
         return;
     }
@@ -368,9 +556,10 @@ void puf_key(void)
     idx = read_u32_le(hash) % count;
 
     /* fetch the challenge record from the appropriate data block */
-    block  = PUF_SD_BASE + 1u + idx / 128u;
+    block = PUF_SD_BASE + 1u + idx / 128u;
     offset = (idx % 128u) * 4u;
-    if (sd_read_block(block, sd_buf) < 0) {
+    if (sd_read_block(block, sd_buf) < 0)
+    {
         uart_puts("SD read error\r\n");
         return;
     }
@@ -382,23 +571,378 @@ void puf_key(void)
     /* configure PUF with the selected challenge */
     puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
     puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
-    if (tc % 2u != 0u) { top_pattern = 0xAAAAAAAAu; top_phi = 0x40000000u; }
-    else                { top_pattern = 0x55555555u; top_phi = 0x40000001u; }
-    if (bc % 2u == 0u) { bot_pattern = 0xAAAAAAAAu; bot_phi = 0x50000000u; }
-    else                { bot_pattern = 0x55555555u; bot_phi = 0x50000001u; }
+    if (tc % 2u != 0u)
+    {
+        top_pattern = 0xAAAAAAAAu;
+        top_phi = 0x40000000u;
+    }
+    else
+    {
+        top_pattern = 0x55555555u;
+        top_phi = 0x40000001u;
+    }
+    if (bc % 2u == 0u)
+    {
+        bot_pattern = 0xAAAAAAAAu;
+        bot_phi = 0x50000000u;
+    }
+    else
+    {
+        bot_pattern = 0x55555555u;
+        bot_phi = 0x50000001u;
+    }
     puf_send_cmd(top_phi, top_pattern);
     puf_send_cmd(bot_phi, bot_pattern);
 
     puf_do_req(&hi, &lo);
 
-    uart_puts("idx=");    uart_print_hex(idx);
-    uart_puts(" tc=");    uart_print_hex(tc);
-    uart_puts(" tt=");    uart_print_hex(tt);
-    uart_puts(" bc=");    uart_print_hex(bc);
-    uart_puts(" bt=");    uart_print_hex(bt);
+    uart_puts("idx=");
+    uart_print_hex(idx);
+    uart_puts(" tc=");
+    uart_print_hex(tc);
+    uart_puts(" tt=");
+    uart_print_hex(tt);
+    uart_puts(" bc=");
+    uart_print_hex(bc);
+    uart_puts(" bt=");
+    uart_print_hex(bt);
     uart_puts("\r\nPUF: ");
     uart_print_hex(hi);
     uart_putchar(':');
     uart_print_hex(lo);
     uart_puts("\r\n");
+}
+
+void puf_reconfigure_state(uint32_t state_index, uint32_t seed)
+{
+    if (state_index >= NUM_STATES)
+        return;
+    puf_state_t *st = &lr_states[state_index];
+
+    time_ll_t now = readtime_ll();
+
+    if (!st->is_initialized)
+    {
+        if (num_mem_valid_challenges == 0)
+        {
+            uart_puts("LR-PUF Error: Run pa (puf_scan) first!\r\n");
+            return;
+        }
+
+        uint32_t idx = seed % num_mem_valid_challenges;
+        uint32_t tc, tt, bc, bt;
+        unpack_challenge(mem_valid_challenges[idx], &tc, &tt, &bc, &bt);
+
+        uint32_t top_pattern, top_phi, bot_pattern, bot_phi;
+        puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+        puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
+        if (tc % 2u != 0u)
+        {
+            top_pattern = 0xAAAAAAAAu;
+            top_phi = 0x40000000u;
+        }
+        else
+        {
+            top_pattern = 0x55555555u;
+            top_phi = 0x40000001u;
+        }
+        if (bc % 2u == 0u)
+        {
+            bot_pattern = 0xAAAAAAAAu;
+            bot_phi = 0x50000000u;
+        }
+        else
+        {
+            bot_pattern = 0x55555555u;
+            bot_phi = 0x50000001u;
+        }
+        puf_send_cmd(top_phi, top_pattern);
+        puf_send_cmd(bot_phi, bot_pattern);
+
+        uint32_t hi, lo;
+        puf_do_req(&hi, &lo);
+
+        uint8_t puf_resp[8];
+        puf_resp[0] = hi >> 24;
+        puf_resp[1] = hi >> 16;
+        puf_resp[2] = hi >> 8;
+        puf_resp[3] = hi;
+        puf_resp[4] = lo >> 24;
+        puf_resp[5] = lo >> 16;
+        puf_resp[6] = lo >> 8;
+        puf_resp[7] = lo;
+
+        crypto_blake2b_ctx ctx;
+        crypto_blake2b_init(&ctx, HASH_SIZE);
+        crypto_blake2b_update(&ctx, (const uint8_t *)&tc, 4);
+        crypto_blake2b_update(&ctx, (const uint8_t *)&tt, 4);
+        crypto_blake2b_update(&ctx, (const uint8_t *)&bc, 4);
+        crypto_blake2b_update(&ctx, (const uint8_t *)&bt, 4);
+        crypto_blake2b_update(&ctx, puf_resp, 8);
+        crypto_blake2b_update(&ctx, (const uint8_t *)&seed, 4);
+        crypto_blake2b_update(&ctx, (const uint8_t *)&now.s.time_low, 4);
+        crypto_blake2b_final(&ctx, st->hash_value);
+
+        st->tc_last = tc;
+        st->tt_last = tt;
+        st->bc_last = bc;
+        st->bt_last = bt;
+        st->is_initialized = 1;
+
+        uart_puts("LR-PUF: State ");
+        uart_print_hex(state_index);
+        uart_puts(" initialized.\r\n");
+    }
+    else
+    {
+        crypto_blake2b_ctx ctx;
+        crypto_blake2b_init(&ctx, HASH_SIZE);
+        crypto_blake2b_update(&ctx, st->hash_value, HASH_SIZE);
+        crypto_blake2b_update(&ctx, (const uint8_t *)&seed, 4);
+        crypto_blake2b_update(&ctx, (const uint8_t *)&now.s.time_low, 4);
+        crypto_blake2b_final(&ctx, st->hash_value);
+
+        uart_puts("LR-PUF: State ");
+        uart_print_hex(state_index);
+        uart_puts(" reconfigured.\r\n");
+    }
+}
+
+void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id)
+{
+    if (state_index >= NUM_STATES)
+    {
+        uart_puts("Invalid state index\r\n");
+        return;
+    }
+    puf_state_t *st = &lr_states[state_index];
+
+    if (!st->is_initialized || num_mem_valid_challenges == 0)
+    {
+        uart_puts("LR-PUF Error: Not initialized\r\n");
+        return;
+    }
+
+    uint8_t new_hash[HASH_SIZE];
+    crypto_blake2b_ctx ctx;
+
+    crypto_blake2b_init(&ctx, HASH_SIZE);
+    crypto_blake2b_update(&ctx, st->hash_value, HASH_SIZE);
+    crypto_blake2b_update(&ctx, (const uint8_t *)&challenge_id, 4);
+    crypto_blake2b_final(&ctx, new_hash);
+
+    uint32_t combined = ((uint32_t)new_hash[0] << 24) |
+                        ((uint32_t)new_hash[1] << 16) |
+                        ((uint32_t)new_hash[2] << 8) |
+                        (uint32_t)new_hash[3];
+
+    uint32_t idx = combined % num_mem_valid_challenges;
+    uint32_t tc, tt, bc, bt;
+    unpack_challenge(mem_valid_challenges[idx], &tc, &tt, &bc, &bt);
+
+    // Map input challenge to intermediate choice-puf challenge
+    uart_puts("LR-PUF: mapped input ");
+    uart_print_hex(challenge_id);
+    uart_puts(" to choice PUF: tc=");
+    uart_print_hex(tc);
+    uart_puts(" tt=");
+    uart_print_hex(tt);
+    uart_puts(" bc=");
+    uart_print_hex(bc);
+    uart_puts(" bt=");
+    uart_print_hex(bt);
+    uart_puts("\r\n");
+
+    uint32_t top_pattern, top_phi, bot_pattern, bot_phi;
+    puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+    puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
+    if (tc % 2u != 0u)
+    {
+        top_pattern = 0xAAAAAAAAu;
+        top_phi = 0x40000000u;
+    }
+    else
+    {
+        top_pattern = 0x55555555u;
+        top_phi = 0x40000001u;
+    }
+    if (bc % 2u == 0u)
+    {
+        bot_pattern = 0xAAAAAAAAu;
+        bot_phi = 0x50000000u;
+    }
+    else
+    {
+        bot_pattern = 0x55555555u;
+        bot_phi = 0x50000001u;
+    }
+    puf_send_cmd(top_phi, top_pattern);
+    puf_send_cmd(bot_phi, bot_pattern);
+
+    uint32_t hi, lo;
+    puf_do_req(&hi, &lo);
+
+    uint8_t puf_resp[8];
+    puf_resp[0] = hi >> 24;
+    puf_resp[1] = hi >> 16;
+    puf_resp[2] = hi >> 8;
+    puf_resp[3] = hi;
+    puf_resp[4] = lo >> 24;
+    puf_resp[5] = lo >> 16;
+    puf_resp[6] = lo >> 8;
+    puf_resp[7] = lo;
+
+    uint8_t output_hash[HASH_SIZE];
+    crypto_blake2b_init(&ctx, HASH_SIZE);
+    crypto_blake2b_update(&ctx, st->hash_value, HASH_SIZE);
+    crypto_blake2b_update(&ctx, (const uint8_t *)&challenge_id, 4);
+    crypto_blake2b_update(&ctx, puf_resp, 8);
+    crypto_blake2b_final(&ctx, output_hash);
+
+    uart_puts("LR-PUF output hash: ");
+    for (int i = 0; i < HASH_SIZE; i++)
+    {
+        uart_print_hex_byte(output_hash[i]);
+    }
+    uart_puts("\r\n");
+}
+
+void puf_save_states(void)
+{
+    uint32_t state_idx;
+    uint32_t offset = 0;
+    uint32_t block = PUF_SD_BASE + 4u;
+    int i;
+
+    for (i = 0; i < 512; i++)
+        sd_buf[i] = 0;
+
+    for (state_idx = 0; state_idx < NUM_STATES; state_idx++)
+    {
+        puf_state_t *st = &lr_states[state_idx];
+        /* 32 (hash) + 20 (params) + 64 (domain) = 116 bytes per state */
+        if (offset + 116u > 512u)
+        {
+            if (sd_write_block(block++, sd_buf) < 0)
+            {
+                uart_puts("SD write error\r\n");
+                return;
+            }
+            for (i = 0; i < 512; i++)
+                sd_buf[i] = 0;
+            offset = 0;
+        }
+        for (i = 0; i < HASH_SIZE; i++)
+            sd_buf[offset++] = st->hash_value[i];
+        write_u32_le(sd_buf + offset, st->is_initialized);
+        offset += 4u;
+        write_u32_le(sd_buf + offset, st->tc_last);
+        offset += 4u;
+        write_u32_le(sd_buf + offset, st->tt_last);
+        offset += 4u;
+        write_u32_le(sd_buf + offset, st->bc_last);
+        offset += 4u;
+        write_u32_le(sd_buf + offset, st->bt_last);
+        offset += 4u;
+        for (i = 0; i < DOMAIN_STR_LEN; i++)
+            sd_buf[offset++] = st->domain_name[i];
+    }
+    if (sd_write_block(block, sd_buf) < 0)
+    {
+        uart_puts("SD write error\r\n");
+        return;
+    }
+    uart_puts("LR-PUF: States saved to SD card.\r\n");
+}
+
+void puf_load_states(void)
+{
+    uint32_t state_idx;
+    uint32_t offset = 0;
+    uint32_t block = PUF_SD_BASE + 4u;
+    int i;
+
+    if (sd_read_block(block++, sd_buf) < 0)
+    {
+        uart_puts("SD read error\r\n");
+        return;
+    }
+
+    for (state_idx = 0; state_idx < NUM_STATES; state_idx++)
+    {
+        puf_state_t *st = &lr_states[state_idx];
+        if (offset + 116u > 512u)
+        {
+            if (sd_read_block(block++, sd_buf) < 0)
+            {
+                uart_puts("SD read error\r\n");
+                return;
+            }
+            offset = 0;
+        }
+        for (i = 0; i < HASH_SIZE; i++)
+            st->hash_value[i] = sd_buf[offset++];
+        st->is_initialized = read_u32_le(sd_buf + offset);
+        offset += 4u;
+        st->tc_last = read_u32_le(sd_buf + offset);
+        offset += 4u;
+        st->tt_last = read_u32_le(sd_buf + offset);
+        offset += 4u;
+        st->bc_last = read_u32_le(sd_buf + offset);
+        offset += 4u;
+        st->bt_last = read_u32_le(sd_buf + offset);
+        offset += 4u;
+        for (i = 0; i < DOMAIN_STR_LEN; i++)
+            st->domain_name[i] = sd_buf[offset++];
+    }
+    uart_puts("LR-PUF: States loaded from SD card.\r\n");
+}
+void puf_set_domain(uint32_t state_index)
+{
+    if (state_index >= NUM_STATES)
+    {
+        uart_puts("Invalid state index\r\n");
+        return;
+    }
+    puf_state_t *st = &lr_states[state_index];
+
+    char input[DOMAIN_STR_LEN];
+    uint32_t len;
+
+    uart_puts("domain_name> ");
+    len = uart_gets(input, sizeof(input));
+    if (len == 0)
+    {
+        uart_puts("cancelled\r\n");
+        return;
+    }
+
+    int i;
+    for (i = 0; i < len && i < DOMAIN_STR_LEN - 1; i++)
+    {
+        st->domain_name[i] = input[i];
+    }
+    st->domain_name[i] = '\0';
+
+    uart_puts("LR-PUF: State ");
+    uart_print_hex(state_index);
+    uart_puts(" domain set to '");
+    uart_puts(st->domain_name);
+    uart_puts("'\r\n");
+}
+
+void puf_print_domain(uint32_t state_index)
+{
+    if (state_index >= NUM_STATES)
+    {
+        uart_puts("Invalid state index\r\n");
+        return;
+    }
+    puf_state_t *st = &lr_states[state_index];
+
+    uart_puts("LR-PUF: State ");
+    uart_print_hex(state_index);
+    uart_puts(" domain is '");
+    uart_puts(st->domain_name);
+    uart_puts("'\r\n");
 }

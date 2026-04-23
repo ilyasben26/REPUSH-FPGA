@@ -40,6 +40,9 @@ extern void puf_scan(void);
  * Run sd_init() before calling this. */
 extern void puf_save(void);
 
+/* Load the valid challenges from the SD card into SRAM to bypass puf_scan(). */
+extern void puf_load_challenges(void);
+
 /* Prompt for a string on the UART, hash it with blake2b, map the hash uniformly
  * into the valid challenges stored on SD, query the PUF, and print the result.
  * Run puf_save() at least once before calling this. */
@@ -50,5 +53,26 @@ extern void puf_key(void);
  * command (top_choice > bottom_choice, each 0..3; tunings 0..7). */
 extern void puf_challenge(uint32_t top_choice, uint32_t top_tune,
                           uint32_t bottom_choice, uint32_t bottom_tune);
+
+/* ---- LR-PUF State API ---- */
+
+/* Save the 11 states into SD Card */
+extern void puf_save_states(void);
+
+/* Load the 11 states from SD Card */
+extern void puf_load_states(void);
+
+/* Set the domain name for the given state interactively */
+extern void puf_set_domain(uint32_t state_index);
+
+/* Print the domain name for the given state */
+extern void puf_print_domain(uint32_t state_index);
+
+/* Reconfigure the state.  state_index: 0..10, seed: random value from external source. */
+extern void puf_reconfigure_state(uint32_t state_index, uint32_t seed);
+
+/* Map an external challenge to a valid PUF challenge via the current state, measure the
+ * PUF, and return the computed output hash. */
+extern void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id);
 
 #endif
