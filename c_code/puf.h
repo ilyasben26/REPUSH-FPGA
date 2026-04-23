@@ -35,6 +35,16 @@ extern void puf_measure(uint32_t count);
  * and print how many produce a response that is not all-1s. */
 extern void puf_scan(void);
 
+/* Scan all 384 challenges and write the valid ones (non-all-1s) to the SD card.
+ * Blocks PUF_SD_BASE+0 (header) and +1..+3 (data) are overwritten.
+ * Run sd_init() before calling this. */
+extern void puf_save(void);
+
+/* Prompt for a string on the UART, hash it with blake2b, map the hash uniformly
+ * into the valid challenges stored on SD, query the PUF, and print the result.
+ * Run puf_save() at least once before calling this. */
+extern void puf_key(void);
+
 /* One-shot challenge: configure tune + choice + patterns, then print a single
  * PUF measurement.  Values follow the same rules as the Python challenge
  * command (top_choice > bottom_choice, each 0..3; tunings 0..7). */
