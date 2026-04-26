@@ -12,6 +12,7 @@ extern void uart_puts(char *s);
 extern void uart_print_hex_byte(uint8_t v);
 extern uint32_t uart_gets(char *buf, uint32_t buf_len);
 extern uint32_t uart_get_hex(void);
+extern void uart_set_arduino_mirror(uint32_t enable);
 
 extern void arduino_uart_set_div(uint32_t div);
 extern void arduino_uart_print_hex(uint32_t val);

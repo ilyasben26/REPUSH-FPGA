@@ -25,6 +25,259 @@
 extern uint32_t timer_instr(uint32_t val);   /* from startup.S */
 extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 
+#define ARDUINO_UART_DATA_REG ((volatile uint8_t *)0x8000005c)
+
+#define PROTO_SOF1 0xA5
+#define PROTO_SOF2 0x5A
+#define PROTO_VERSION 1
+#define PROTO_MAX_PAYLOAD 96
+
+#define PROTO_MSG_REQ 1
+#define PROTO_MSG_RSP 2
+#define PROTO_MSG_ERR 3
+
+#define PROTO_CMD_PING 1
+#define PROTO_CMD_GET_INFO 2
+#define PROTO_CMD_GET_TIME 3
+
+#define PROTO_ERR_BAD_CRC 1
+#define PROTO_ERR_BAD_LEN 2
+#define PROTO_ERR_BAD_VERSION 3
+#define PROTO_ERR_UNKNOWN_CMD 4
+
+enum proto_parse_state
+{
+  PROTO_WAIT_SOF1 = 0,
+  PROTO_WAIT_SOF2,
+  PROTO_READ_HEADER,
+  PROTO_READ_PAYLOAD,
+  PROTO_READ_CRC_LO,
+  PROTO_READ_CRC_HI
+};
+
+static uint8_t proto_state;
+static uint8_t proto_header[6];
+static uint8_t proto_payload[PROTO_MAX_PAYLOAD];
+static uint16_t proto_payload_len;
+static uint16_t proto_payload_index;
+static uint8_t proto_header_index;
+static uint16_t proto_rx_crc;
+static uint8_t proto_rx_crc_lo;
+
+uint16_t proto_crc16_update(uint16_t crc, uint8_t data)
+{
+  uint16_t i;
+
+  crc ^= data;
+  for (i = 0; i < 8; i++)
+  {
+    if (crc & 1)
+      crc = (crc >> 1) ^ 0xA001;
+    else
+      crc = crc >> 1;
+  }
+
+  return crc;
+}
+
+void proto_reset_parser(void)
+{
+  proto_state = PROTO_WAIT_SOF1;
+  proto_payload_len = 0;
+  proto_payload_index = 0;
+  proto_header_index = 0;
+  proto_rx_crc = 0xffff;
+  proto_rx_crc_lo = 0;
+}
+
+void proto_send_frame(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t *payload, uint16_t payload_len)
+{
+  uint16_t i;
+  uint16_t crc;
+  uint8_t b;
+
+  crc = 0xffff;
+
+  arduino_uart_putchar(PROTO_SOF1);
+  arduino_uart_putchar(PROTO_SOF2);
+
+  b = PROTO_VERSION;
+  arduino_uart_putchar(b);
+  crc = proto_crc16_update(crc, b);
+
+  b = msg_type;
+  arduino_uart_putchar(b);
+  crc = proto_crc16_update(crc, b);
+
+  b = seq;
+  arduino_uart_putchar(b);
+  crc = proto_crc16_update(crc, b);
+
+  b = cmd;
+  arduino_uart_putchar(b);
+  crc = proto_crc16_update(crc, b);
+
+  b = (uint8_t)(payload_len & 0xff);
+  arduino_uart_putchar(b);
+  crc = proto_crc16_update(crc, b);
+
+  b = (uint8_t)((payload_len >> 8) & 0xff);
+  arduino_uart_putchar(b);
+  crc = proto_crc16_update(crc, b);
+
+  for (i = 0; i < payload_len; i++)
+  {
+    arduino_uart_putchar(payload[i]);
+    crc = proto_crc16_update(crc, payload[i]);
+  }
+
+  arduino_uart_putchar((uint8_t)(crc & 0xff));
+  arduino_uart_putchar((uint8_t)((crc >> 8) & 0xff));
+}
+
+void proto_send_error(uint8_t seq, uint8_t cmd, uint8_t err)
+{
+  uint8_t payload[1];
+
+  payload[0] = err;
+  proto_send_frame(PROTO_MSG_ERR, seq, cmd, payload, 1);
+}
+
+void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t *payload, uint16_t payload_len)
+{
+  uint8_t info[8];
+  uint32_t t;
+  uint8_t time_payload[4];
+
+  if (msg_type != PROTO_MSG_REQ)
+    return;
+
+  if (cmd == PROTO_CMD_PING)
+  {
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, payload, payload_len);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_GET_INFO)
+  {
+    info[0] = PROTO_VERSION;
+    info[1] = (uint8_t)(PROTO_MAX_PAYLOAD & 0xff);
+    info[2] = (uint8_t)((PROTO_MAX_PAYLOAD >> 8) & 0xff);
+    info[3] = 0x07; /* bit0: ping, bit1: get_info, bit2: get_time */
+    info[4] = 1;    /* fw major */
+    info[5] = 0;    /* fw minor */
+    info[6] = 0;
+    info[7] = 0;
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, info, sizeof(info));
+    return;
+  }
+
+  if (cmd == PROTO_CMD_GET_TIME)
+  {
+    t = readtime();
+    time_payload[0] = (uint8_t)(t & 0xff);
+    time_payload[1] = (uint8_t)((t >> 8) & 0xff);
+    time_payload[2] = (uint8_t)((t >> 16) & 0xff);
+    time_payload[3] = (uint8_t)((t >> 24) & 0xff);
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, time_payload, sizeof(time_payload));
+    return;
+  }
+
+  proto_send_error(seq, cmd, PROTO_ERR_UNKNOWN_CMD);
+}
+
+void proto_feed_byte(uint8_t ch)
+{
+  uint16_t received_crc;
+
+  switch (proto_state)
+  {
+  case PROTO_WAIT_SOF1:
+    if (ch == PROTO_SOF1)
+      proto_state = PROTO_WAIT_SOF2;
+    break;
+
+  case PROTO_WAIT_SOF2:
+    if (ch == PROTO_SOF2)
+    {
+      proto_state = PROTO_READ_HEADER;
+      proto_header_index = 0;
+      proto_payload_index = 0;
+      proto_payload_len = 0;
+      proto_rx_crc = 0xffff;
+    }
+    else if (ch != PROTO_SOF1)
+    {
+      proto_state = PROTO_WAIT_SOF1;
+    }
+    break;
+
+  case PROTO_READ_HEADER:
+    proto_header[proto_header_index++] = ch;
+    proto_rx_crc = proto_crc16_update(proto_rx_crc, ch);
+    if (proto_header_index == sizeof(proto_header))
+    {
+      proto_payload_len = (uint16_t)proto_header[4] | ((uint16_t)proto_header[5] << 8);
+
+      if (proto_header[0] != PROTO_VERSION)
+      {
+        proto_send_error(proto_header[2], proto_header[3], PROTO_ERR_BAD_VERSION);
+        proto_reset_parser();
+      }
+      else if (proto_payload_len > PROTO_MAX_PAYLOAD)
+      {
+        proto_send_error(proto_header[2], proto_header[3], PROTO_ERR_BAD_LEN);
+        proto_reset_parser();
+      }
+      else if (proto_payload_len == 0)
+      {
+        proto_state = PROTO_READ_CRC_LO;
+      }
+      else
+      {
+        proto_payload_index = 0;
+        proto_state = PROTO_READ_PAYLOAD;
+      }
+    }
+    break;
+
+  case PROTO_READ_PAYLOAD:
+    proto_payload[proto_payload_index++] = ch;
+    proto_rx_crc = proto_crc16_update(proto_rx_crc, ch);
+    if (proto_payload_index >= proto_payload_len)
+      proto_state = PROTO_READ_CRC_LO;
+    break;
+
+  case PROTO_READ_CRC_LO:
+    proto_rx_crc_lo = ch;
+    proto_state = PROTO_READ_CRC_HI;
+    break;
+
+  case PROTO_READ_CRC_HI:
+    received_crc = (uint16_t)proto_rx_crc_lo | ((uint16_t)ch << 8);
+    if (received_crc == proto_rx_crc)
+      proto_dispatch_request(proto_header[1], proto_header[2], proto_header[3], proto_payload, proto_payload_len);
+    else
+      proto_send_error(proto_header[2], proto_header[3], PROTO_ERR_BAD_CRC);
+    proto_reset_parser();
+    break;
+
+  default:
+    proto_reset_parser();
+    break;
+  }
+}
+
+void proto_poll_arduino_uart(void)
+{
+  uint8_t ch;
+
+  while ((ch = *ARDUINO_UART_DATA_REG) != 0xff)
+  {
+    proto_feed_byte(ch);
+  }
+}
+
 uint32_t timer_irq_count;
 uint32_t illegal_irq_count;
 uint32_t buserr_irq_count;
@@ -817,6 +1070,8 @@ int main()
 
   uart_set_div(CLK_FREQ / 115200.0 + 0.5);
   arduino_uart_set_div(CLK_FREQ / 115200.0 + 0.5);
+  uart_set_arduino_mirror(0);
+  proto_reset_parser();
 
   uart_puts("\r\nStarting, CLK_FREQ: 0x");
   uart_print_hex(CLK_FREQ);
@@ -836,12 +1091,7 @@ int main()
     }
 
     /* Poll Arduino UART */
-    if (*((volatile uint8_t *)0x8000005c) != 0xff)
-    {
-      len = arduino_uart_gets(buf, BUFLEN);
-      if (len != 0)
-        parse(buf, len);
-    }
+    proto_poll_arduino_uart();
   }
 
   return 0;

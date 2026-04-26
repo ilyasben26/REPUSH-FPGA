@@ -9,6 +9,13 @@
 #define ARDUINO_UART_DIV ((volatile uint32_t *)0x80000058)
 #define ARDUINO_UART_DATA ((volatile uint8_t *)0x8000005c)
 
+static uint32_t arduino_mirror_enabled = 1;
+
+void uart_set_arduino_mirror(uint32_t enable)
+{
+  arduino_mirror_enabled = (enable != 0);
+}
+
 void uart_set_div(uint32_t div)
 {
   volatile int delay;
@@ -30,7 +37,8 @@ void uart_print_hex(uint32_t val)
   {
     ch = (val & 0xf0000000) >> 28;
     *UART_DATA = "0123456789abcdef"[ch];
-    *ARDUINO_UART_DATA = "0123456789abcdef"[ch];
+    if (arduino_mirror_enabled)
+      *ARDUINO_UART_DATA = "0123456789abcdef"[ch];
     val = val << 4;
   }
 }
@@ -50,7 +58,8 @@ char uart_getchar(void)
 void uart_putchar(char ch)
 {
   *UART_DATA = ch;
-  *ARDUINO_UART_DATA = ch;
+  if (arduino_mirror_enabled)
+    *ARDUINO_UART_DATA = ch;
 }
 
 void uart_puts(char *s)
@@ -58,7 +67,8 @@ void uart_puts(char *s)
   while (*s != 0)
   {
     *UART_DATA = *s;
-    *ARDUINO_UART_DATA = *s;
+    if (arduino_mirror_enabled)
+      *ARDUINO_UART_DATA = *s;
     s++;
   }
 }
