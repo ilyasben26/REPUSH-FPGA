@@ -222,7 +222,7 @@ void memory_test(void)
 
 void read_clock(void)
 {
-  uart_puts("time is ");
+  uart_puts("RC:");
   uart_print_hex(readtime());
   uart_puts("\r\n");
 }
@@ -374,16 +374,6 @@ void hello_world(void)
 {
   uart_puts("Hello World!");
   uart_puts("\r\n");
-}
-
-void uart_print_hex_byte(uint8_t v)
-{
-  char ch;
-
-  ch = (v >> 4) & 0xf;
-  uart_putchar("0123456789abcdef"[(uint8_t)ch]);
-  ch = v & 0xf;
-  uart_putchar("0123456789abcdef"[(uint8_t)ch]);
 }
 
 void hash_uart_line(void)
@@ -826,6 +816,7 @@ int main()
   la_rtest(); /* nice to view on a logic analyzer. */
 
   uart_set_div(CLK_FREQ / 115200.0 + 0.5);
+  arduino_uart_set_div(CLK_FREQ / 115200.0 + 0.5);
 
   uart_puts("\r\nStarting, CLK_FREQ: 0x");
   uart_print_hex(CLK_FREQ);
@@ -836,9 +827,21 @@ int main()
 
   while (1)
   {
-    len = uart_gets(buf, BUFLEN);
-    if (len != 0)
-      parse(buf, len);
+    /* Poll main UART */
+    if (*((volatile uint8_t *)0x8000000c) != 0xff)
+    {
+      len = uart_gets(buf, BUFLEN);
+      if (len != 0)
+        parse(buf, len);
+    }
+
+    /* Poll Arduino UART */
+    if (*((volatile uint8_t *)0x8000005c) != 0xff)
+    {
+      len = arduino_uart_gets(buf, BUFLEN);
+      if (len != 0)
+        parse(buf, len);
+    }
   }
 
   return 0;

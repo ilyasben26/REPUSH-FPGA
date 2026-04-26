@@ -38,6 +38,8 @@ module top (
             output wire       sd_clk,
             input wire        uart_rx,
             output wire       uart_tx,
+            input wire        arduino_rx,
+            output wire       arduino_tx,
 `ifdef USE_LA
             output wire       clk_out,
             output wire       mem_instr, 
@@ -95,8 +97,9 @@ module top (
    wire [31:0]                cdt_data_o;
    wire                       uart_sel;
    wire [31:0]                uart_data_o;
-   wire                       uart_ready;
-`ifdef BOARD_9K
+   wire                       uart_ready;   wire                       arduino_uart_sel;
+   wire [31:0]                arduino_uart_data_o;
+   wire                       arduino_uart_ready;`ifdef BOARD_9K
    wire                       uflash_sel;
    wire [31:0]                uflash_data_o;
    wire                       uflash_ready;
@@ -144,6 +147,7 @@ module top (
    // ws2812b 80000020 - 80000023  (20k only)
    // sd_spi  80000030 - 8000003f
    //     PUF 80000040 - 8000004f
+   // ARDUINO 80000058 - 8000005f
 
    assign sram_sel = mem_valid && (mem_addr < MEMBYTES);
 `ifdef BOARD_9K
@@ -157,10 +161,11 @@ module top (
 `endif
    assign sd_spi_sel   = mem_valid && ((mem_addr & 32'hfffffff0) == 32'h80000030);
    assign puf_peri_sel = mem_valid && ((mem_addr & 32'hfffffff0) == 32'h80000040);
+   assign arduino_uart_sel = mem_valid && ((mem_addr & 32'hfffffff8) == 32'h80000058);
 
    // Core can proceed based on which slave was targetted and is now ready.
    assign mem_ready = mem_valid &
-      (sram_ready | leds_ready | uart_ready | cdt_ready | puf_peri_ready |
+      (sram_ready | leds_ready | uart_ready | arduino_uart_ready | cdt_ready | puf_peri_ready |
 `ifdef BOARD_9K
         uflash_ready |
 `endif
@@ -173,6 +178,7 @@ module top (
    assign mem_rdata = sram_sel      ? sram_data_o :
                       leds_sel      ? leds_data_o :
                       uart_sel      ? uart_data_o :
+                      arduino_uart_sel ? arduino_uart_data_o :
 `ifdef BOARD_9K
                       uflash_sel    ? uflash_data_o :
 `endif
@@ -185,7 +191,7 @@ module top (
    // The default devices responds to accesses to addresses that don't
    // map to any device.
 
-   assign default_sel = mem_valid & !sram_sel & !leds_sel & !uart_sel &
+   assign default_sel = mem_valid & !sram_sel & !leds_sel & !uart_sel & !arduino_uart_sel &
 `ifdef BOARD_9K
                        !uflash_sel &
 `endif
@@ -222,6 +228,20 @@ module top (
       .uart_di(mem_wdata),
       .uart_do(uart_data_o),
       .uart_ready(uart_ready)
+      );
+
+   uart_wrap arduino_uart
+     (
+      .clk(clk),
+      .reset_n(reset_n),
+      .uart_tx(arduino_tx),
+      .uart_rx(arduino_rx),
+      .uart_sel(arduino_uart_sel),
+      .addr(mem_addr[3:0]),
+      .uart_wstrb(mem_wstrb),
+      .uart_di(mem_wdata),
+      .uart_do(arduino_uart_data_o),
+      .uart_ready(arduino_uart_ready)
       );
 
    countdown_timer cdt

@@ -39,3 +39,10 @@ IO_LOC "reset_button" 88;
 IO_PORT "reset_button" IO_TYPE=LVCMOS33 PULL_MODE=NONE PCI_CLAMP=OFF BANK_VCCIO=3.3;
 IO_LOC "clk_in" 4;
 IO_PORT "clk_in" IO_TYPE=LVCMOS33 PULL_MODE=NONE PCI_CLAMP=OFF BANK_VCCIO=3.3;
+
+IO_LOC "arduino_tx" 74;
+IO_PORT "arduino_tx" IO_TYPE=LVCMOS33;
+IO_LOC "arduino_rx" 73;
+IO_PORT "arduino_rx" IO_TYPE=LVCMOS33;
+
+
