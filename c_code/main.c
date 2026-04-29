@@ -654,6 +654,90 @@ void hash_uart_line(void)
   uart_puts("\r\n");
 }
 
+#define CA_KEY_BLOCK 8u
+#define CA_KEY_MAGIC 0x314B4143u /* "CAK1" */
+
+// 860683f2ac76cafb0140051b0b36125af200461656041f0082b2a16e5c32358a
+static const uint8_t ca_pubkey[32] = {
+    0x86, 0x06, 0x83, 0xf2, 0xac, 0x76, 0xca, 0xfb,
+    0x01, 0x40, 0x05, 0x1b, 0x0b, 0x36, 0x12, 0x5a,
+    0xf2, 0x00, 0x46, 0x16, 0x56, 0x04, 0x1f, 0x00,
+    0x82, 0xb2, 0xa1, 0x6e, 0x5c, 0x32, 0x35, 0x8a};
+
+static void write_u32_le(uint8_t *p, uint32_t v)
+{
+  p[0] = (uint8_t)v;
+  p[1] = (uint8_t)(v >> 8);
+  p[2] = (uint8_t)(v >> 16);
+  p[3] = (uint8_t)(v >> 24);
+}
+
+static int provision_ca_pubkey(void)
+{
+  uint8_t buf[512];
+
+  if (sd_read_block(CA_KEY_BLOCK, buf) == 0)
+  {
+    if ((uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
+        ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24))
+    {
+      return 0; /* already provisioned */
+    }
+  }
+
+  for (int i = 0; i < 512; i++)
+    buf[i] = 0;
+  write_u32_le(buf + 0, CA_KEY_MAGIC);
+  write_u32_le(buf + 4, 1u);
+  for (int i = 0; i < 32; i++)
+    buf[8 + i] = ca_pubkey[i];
+
+  return sd_write_block(CA_KEY_BLOCK, buf);
+}
+
+static void debug_ca_key(void)
+{
+  uint8_t buf[512];
+  int i;
+  int mismatch = 0;
+
+  if (sd_read_block(CA_KEY_BLOCK, buf) < 0)
+  {
+    uart_puts("CA key: SD read failed\r\n");
+    return;
+  }
+
+  uart_puts("CA key block magic = ");
+  uart_print_hex((uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
+                 ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24));
+  uart_puts("\r\nstored key = ");
+
+  for (i = 0; i < 32; i++)
+  {
+    uart_print_hex_byte(buf[8 + i]);
+    if (buf[8 + i] != ca_pubkey[i])
+    {
+      mismatch = 1;
+    }
+  }
+  uart_puts("\r\ncompiled key = ");
+
+  for (i = 0; i < 32; i++)
+  {
+    uart_print_hex_byte(ca_pubkey[i]);
+  }
+  uart_puts("\r\n");
+
+  if (mismatch)
+  {
+    uart_puts("CA key mismatch\r\n");
+  }
+  else
+  {
+    uart_puts("CA key matches\r\n");
+  }
+}
+
 void help(void)
 {
   uart_puts("ct            : test countdown timer\r\n");
@@ -707,6 +791,7 @@ void help(void)
   uart_puts("ls            : load LR-PUF states from SD card\r\n");
   uart_puts("sd state      : set domain name for LR-PUF state (interactively asks for string)\r\n");
   uart_puts("pd state      : print domain name for LR-PUF state\r\n");
+  uart_puts("ck            : check CA public key in SD card\r\n");
   uart_puts("   all numbers are hex\r\n");
 }
 
@@ -906,7 +991,8 @@ struct command
     {"sd", 1, .u.func1 = puf_set_domain},
     {"pd", 1, .u.func1 = puf_print_domain},
     {"rs", 2, .u.func2 = puf_reconfigure_state},
-    {"cl", 2, .u.func2 = puf_challenge_lr}};
+    {"cl", 2, .u.func2 = puf_challenge_lr},
+    {"ck", 0, .u.func0 = debug_ca_key}};
 
 void eat_spaces(char **buf, uint32_t *len)
 {
@@ -1065,8 +1151,8 @@ int main()
   buserr_irq_count = 0;
   irq3_count = 0;
 
-  la_wtest(); /* Could delete these.  They produce transactions that are */
-  la_rtest(); /* nice to view on a logic analyzer. */
+  // la_wtest(); /* Could delete these.  They produce transactions that are */
+  // la_rtest(); /* nice to view on a logic analyzer. */
 
   uart_set_div(CLK_FREQ / 115200.0 + 0.5);
   arduino_uart_set_div(CLK_FREQ / 115200.0 + 0.5);
@@ -1079,6 +1165,15 @@ int main()
 
   uart_puts("Initializing SD card...\r\n");
   sd_card_init();
+
+  if (provision_ca_pubkey() < 0)
+  {
+    uart_puts("CA key provision failed\r\n");
+  }
+  else
+  {
+    uart_puts("CA key ready\r\n");
+  }
 
   while (1)
   {

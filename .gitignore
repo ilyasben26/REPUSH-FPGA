@@ -5,3 +5,5 @@ impl/
 *.elf
 *.hex
 PUF-FPGA/
+examples/
+.env/
