@@ -39,11 +39,22 @@ extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 #define PROTO_CMD_PING 1
 #define PROTO_CMD_GET_INFO 2
 #define PROTO_CMD_GET_TIME 3
+#define PROTO_CMD_GET_CA_KEY 4
 
 #define PROTO_ERR_BAD_CRC 1
 #define PROTO_ERR_BAD_LEN 2
 #define PROTO_ERR_BAD_VERSION 3
 #define PROTO_ERR_UNKNOWN_CMD 4
+
+/* CA public key stored directly in firmware */
+static const uint8_t CA_PUBKEY[32] = {
+    0x60, 0x82, 0x45, 0x4e, 0xab, 0x1c, 0x7c, 0x1e,
+    0x13, 0xc8, 0xab, 0x61, 0xdb, 0xf9, 0x32, 0x4d,
+    0xab, 0x01, 0x23, 0xbf, 0xf6, 0x14, 0x4e, 0xea,
+    0x42, 0xb7, 0xc8, 0x68, 0xc9, 0x5b, 0xad, 0xc9};
+
+#define CA_KEY_BLOCK 8u
+#define CA_KEY_MAGIC 0x314B4143u /* "CAK1" */
 
 enum proto_parse_state
 {
@@ -143,11 +154,20 @@ void proto_send_error(uint8_t seq, uint8_t cmd, uint8_t err)
   proto_send_frame(PROTO_MSG_ERR, seq, cmd, payload, 1);
 }
 
+static int get_ca_key(uint8_t out[32])
+{
+  int i;
+  for (i = 0; i < 32; i++)
+    out[i] = CA_PUBKEY[i];
+  return 0;
+}
+
 void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t *payload, uint16_t payload_len)
 {
   uint8_t info[8];
   uint32_t t;
   uint8_t time_payload[4];
+  uint8_t ca_key_payload[32];
 
   if (msg_type != PROTO_MSG_REQ)
     return;
@@ -180,6 +200,13 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
     time_payload[2] = (uint8_t)((t >> 16) & 0xff);
     time_payload[3] = (uint8_t)((t >> 24) & 0xff);
     proto_send_frame(PROTO_MSG_RSP, seq, cmd, time_payload, sizeof(time_payload));
+    return;
+  }
+
+  if (cmd == PROTO_CMD_GET_CA_KEY)
+  {
+    get_ca_key(ca_key_payload);
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, ca_key_payload, sizeof(ca_key_payload));
     return;
   }
 
@@ -653,9 +680,6 @@ void hash_uart_line(void)
   }
   uart_puts("\r\n");
 }
-
-#define CA_KEY_BLOCK 8u
-#define CA_KEY_MAGIC 0x314B4143u /* "CAK1" */
 
 // 860683f2ac76cafb0140051b0b36125af200461656041f0082b2a16e5c32358a
 static const uint8_t ca_pubkey[32] = {
