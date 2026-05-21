@@ -88,10 +88,23 @@ extern void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id);
  * Returns 0 on success, -1 if all 11 states are in use. */
 extern int puf_get_free_state(uint32_t *state_index);
 
-/* Store the device Ed25519 public key and the raw 16-byte PUF challenge for an
- * enrollment record.  Sets acknowledged = 0 (pending server confirmation). */
+/* Store the device Ed25519 public key, the raw 16-byte PUF challenge, and the
+ * server Ed25519 public key for an enrollment record.
+ * Sets acknowledged = 0 (pending server confirmation). */
 extern void puf_store_enrollment(uint32_t state_index,
                                  const uint8_t pubkey[32],
-                                 const uint8_t challenge_raw[16]);
+                                 const uint8_t challenge_raw[16],
+                                 const uint8_t pk_server[32]);
+
+/* Find a state slot by domain name.  On success fills *state_idx, pubkey_out,
+ * challenge_out, pk_server_out and returns 0.  Returns -1 if not found. */
+extern int puf_find_state_by_domain(const char *domain,
+                                    uint32_t *state_idx,
+                                    uint8_t pubkey_out[32],
+                                    uint8_t challenge_out[16],
+                                    uint8_t pk_server_out[32]);
+
+/* Set acknowledged = 1 for the given state slot and save states to SD. */
+extern void puf_mark_acknowledged(uint32_t state_index);
 
 #endif

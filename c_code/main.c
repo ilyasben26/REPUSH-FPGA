@@ -45,7 +45,9 @@ extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 #define PROTO_CMD_PUF_CHALLENGE_LR      7
 #define PROTO_CMD_PUF_SET_DOMAIN        8
 #define PROTO_CMD_PUF_STORE_ENROLLMENT  9
-#define PROTO_CMD_PUF_SAVE_STATES       10
+#define PROTO_CMD_PUF_SAVE_STATES           10
+#define PROTO_CMD_PUF_FIND_STATE_BY_DOMAIN  11
+#define PROTO_CMD_PUF_MARK_ACKNOWLEDGED     12
 
 #define PROTO_ERR_BAD_CRC 1
 #define PROTO_ERR_BAD_LEN 2
@@ -59,7 +61,7 @@ static const uint8_t CA_PUBKEY[32] = {
     0xab, 0x01, 0x23, 0xbf, 0xf6, 0x14, 0x4e, 0xea,
     0x42, 0xb7, 0xc8, 0x68, 0xc9, 0x5b, 0xad, 0xc9};
 
-#define CA_KEY_BLOCK 8u
+#define CA_KEY_BLOCK 9u
 #define CA_KEY_MAGIC 0x314B4143u /* "CAK1" */
 
 enum proto_parse_state
@@ -291,14 +293,14 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
   if (cmd == PROTO_CMD_PUF_STORE_ENROLLMENT)
   {
     uint32_t state_idx;
-    /* payload: state_index(1) + pubkey(32) + challenge_raw(16) = 49 bytes */
-    if (payload_len < 49)
+    /* payload: state_index(1) + pubkey(32) + challenge_raw(16) + pk_server(32) = 81 bytes */
+    if (payload_len < 81)
     {
       proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
       return;
     }
     state_idx = payload[0];
-    puf_store_enrollment(state_idx, payload + 1, payload + 33);
+    puf_store_enrollment(state_idx, payload + 1, payload + 33, payload + 49);
     proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
     return;
   }
@@ -306,6 +308,48 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
   if (cmd == PROTO_CMD_PUF_SAVE_STATES)
   {
     puf_save_states();
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_FIND_STATE_BY_DOMAIN)
+  {
+    /* payload: domain string (1..63 bytes, not necessarily NUL-terminated) */
+    char domain[65];
+    uint8_t resp[81];
+    uint8_t pubkey[32], challenge[16], pk_server[32];
+    uint32_t state_idx, dlen, i;
+    if (payload_len < 1 || payload_len > 64)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    dlen = payload_len;
+    for (i = 0; i < dlen; i++)
+      domain[i] = (char)payload[i];
+    domain[dlen] = '\0';
+    if (puf_find_state_by_domain(domain, &state_idx, pubkey, challenge, pk_server) < 0)
+    {
+      proto_send_error(seq, cmd, 1); /* 1 = domain not found */
+      return;
+    }
+    resp[0] = (uint8_t)state_idx;
+    for (i = 0; i < 32; i++) resp[1  + i] = pubkey[i];
+    for (i = 0; i < 16; i++) resp[33 + i] = challenge[i];
+    for (i = 0; i < 32; i++) resp[49 + i] = pk_server[i];
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, resp, 81);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_MARK_ACKNOWLEDGED)
+  {
+    /* payload: state_index(1) */
+    if (payload_len < 1)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    puf_mark_acknowledged(payload[0]);
     proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
     return;
   }

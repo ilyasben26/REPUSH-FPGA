@@ -11,8 +11,8 @@
 #define HASH_SIZE 32
 #define DOMAIN_STR_LEN PUF_DOMAIN_STR_LEN
 #define MAX_POSSIBLE_CHALLENGES 384
-/* Serialised bytes per state: 32+4+(4*4)+64+32+16+4 = 168 */
-#define STATE_RECORD_SIZE 168u
+/* Serialised bytes per state: 32+4+(4*4)+64+32+16+32+4 = 200 */
+#define STATE_RECORD_SIZE 200u
 
 typedef struct
 {
@@ -22,6 +22,7 @@ typedef struct
     char domain_name[DOMAIN_STR_LEN];
     uint8_t pubkey[32];        /* device Ed25519 public key set during enroll */
     uint8_t challenge_raw[16]; /* raw 16-byte PUF challenge from enroll payload */
+    uint8_t pk_server[32];     /* server Ed25519 public key (from cert) */
     uint32_t acknowledged;     /* 0 = pending server ack, 1 = acknowledged */
 } puf_state_t;
 
@@ -843,7 +844,8 @@ void puf_set_domain_str(uint32_t state_index, const char *domain)
 
 void puf_store_enrollment(uint32_t state_index,
                           const uint8_t pubkey[32],
-                          const uint8_t challenge_raw[16])
+                          const uint8_t challenge_raw[16],
+                          const uint8_t pk_server[32])
 {
     int i;
     if (state_index >= NUM_STATES)
@@ -853,6 +855,8 @@ void puf_store_enrollment(uint32_t state_index,
         st->pubkey[i] = pubkey[i];
     for (i = 0; i < 16; i++)
         st->challenge_raw[i] = challenge_raw[i];
+    for (i = 0; i < 32; i++)
+        st->pk_server[i] = pk_server[i];
     st->acknowledged = 0;
 }
 
@@ -898,6 +902,8 @@ void puf_save_states(void)
             sd_buf[offset++] = st->pubkey[i];
         for (i = 0; i < 16; i++)
             sd_buf[offset++] = st->challenge_raw[i];
+        for (i = 0; i < 32; i++)
+            sd_buf[offset++] = st->pk_server[i];
         write_u32_le(sd_buf + offset, st->acknowledged);
         offset += 4u;
     }
@@ -952,6 +958,8 @@ void puf_load_states(void)
             st->pubkey[i] = sd_buf[offset++];
         for (i = 0; i < 16; i++)
             st->challenge_raw[i] = sd_buf[offset++];
+        for (i = 0; i < 32; i++)
+            st->pk_server[i] = sd_buf[offset++];
         st->acknowledged = read_u32_le(sd_buf + offset);
         offset += 4u;
     }
@@ -1005,4 +1013,47 @@ void puf_print_domain(uint32_t state_index)
     uart_puts(" domain is '");
     uart_puts(st->domain_name);
     uart_puts("'\r\n");
+}
+
+int puf_find_state_by_domain(const char *domain,
+                              uint32_t *state_idx,
+                              uint8_t pubkey_out[32],
+                              uint8_t challenge_out[16],
+                              uint8_t pk_server_out[32])
+{
+    uint32_t i, j;
+    for (i = 0; i < NUM_STATES; i++)
+    {
+        if (!lr_states[i].is_initialized)
+            continue;
+        /* compare NUL-terminated strings without libc */
+        int match = 1;
+        for (j = 0; ; j++)
+        {
+            if (lr_states[i].domain_name[j] != domain[j]) { match = 0; break; }
+            if (domain[j] == '\0') break;
+        }
+        if (!match)
+            continue;
+        *state_idx = i;
+        for (j = 0; j < 32; j++) pubkey_out[j]    = lr_states[i].pubkey[j];
+        for (j = 0; j < 16; j++) challenge_out[j]  = lr_states[i].challenge_raw[j];
+        for (j = 0; j < 32; j++) pk_server_out[j]  = lr_states[i].pk_server[j];
+        return 0;
+    }
+    return -1;
+}
+
+void puf_mark_acknowledged(uint32_t state_index)
+{
+    if (state_index >= NUM_STATES)
+    {
+        uart_puts("Invalid state index\r\n");
+        return;
+    }
+    lr_states[state_index].acknowledged = 1;
+    puf_save_states();
+    uart_puts("LR-PUF: State ");
+    uart_print_hex(state_index);
+    uart_puts(" acknowledged.\r\n");
 }
