@@ -40,6 +40,12 @@ extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 #define PROTO_CMD_GET_INFO 2
 #define PROTO_CMD_GET_TIME 3
 #define PROTO_CMD_GET_CA_KEY 4
+#define PROTO_CMD_PUF_GET_FREE_STATE    5
+#define PROTO_CMD_PUF_RECONFIGURE_STATE 6
+#define PROTO_CMD_PUF_CHALLENGE_LR      7
+#define PROTO_CMD_PUF_SET_DOMAIN        8
+#define PROTO_CMD_PUF_STORE_ENROLLMENT  9
+#define PROTO_CMD_PUF_SAVE_STATES       10
 
 #define PROTO_ERR_BAD_CRC 1
 #define PROTO_ERR_BAD_LEN 2
@@ -207,6 +213,100 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
   {
     get_ca_key(ca_key_payload);
     proto_send_frame(PROTO_MSG_RSP, seq, cmd, ca_key_payload, sizeof(ca_key_payload));
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_GET_FREE_STATE)
+  {
+    uint32_t free_idx;
+    uint8_t resp[1];
+    if (puf_get_free_state(&free_idx) < 0)
+    {
+      proto_send_error(seq, cmd, 1); /* 1 = all states in use */
+      return;
+    }
+    resp[0] = (uint8_t)free_idx;
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, resp, 1);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_RECONFIGURE_STATE)
+  {
+    uint32_t state_idx, seed;
+    if (payload_len < 5)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    state_idx = payload[0];
+    seed = (uint32_t)payload[1] | ((uint32_t)payload[2] << 8) |
+           ((uint32_t)payload[3] << 16) | ((uint32_t)payload[4] << 24);
+    puf_reconfigure_state(state_idx, seed);
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_CHALLENGE_LR)
+  {
+    uint8_t puf_out[32];
+    uint32_t state_idx, challenge_id;
+    if (payload_len < 5)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    state_idx = payload[0];
+    challenge_id = (uint32_t)payload[1] | ((uint32_t)payload[2] << 8) |
+                   ((uint32_t)payload[3] << 16) | ((uint32_t)payload[4] << 24);
+    if (puf_challenge_lr_ret(state_idx, challenge_id, puf_out) < 0)
+    {
+      proto_send_error(seq, cmd, 2); /* 2 = not initialized / no challenges */
+      return;
+    }
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, puf_out, 32);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_SET_DOMAIN)
+  {
+    char domain[PUF_DOMAIN_STR_LEN];
+    uint32_t state_idx, dlen, i;
+    if (payload_len < 2)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    state_idx = payload[0];
+    dlen = payload_len - 1;
+    if (dlen >= PUF_DOMAIN_STR_LEN)
+      dlen = PUF_DOMAIN_STR_LEN - 1;
+    for (i = 0; i < dlen; i++)
+      domain[i] = (char)payload[1 + i];
+    domain[i] = '\0';
+    puf_set_domain_str(state_idx, domain);
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_STORE_ENROLLMENT)
+  {
+    uint32_t state_idx;
+    /* payload: state_index(1) + pubkey(32) + challenge_raw(16) = 49 bytes */
+    if (payload_len < 49)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    state_idx = payload[0];
+    puf_store_enrollment(state_idx, payload + 1, payload + 33);
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_SAVE_STATES)
+  {
+    puf_save_states();
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
     return;
   }
 
@@ -1198,6 +1298,11 @@ int main()
   {
     uart_puts("CA key ready\r\n");
   }
+
+  uart_puts("Loading PUF challenges from SD...\r\n");
+  puf_load_challenges();
+  uart_puts("Loading LR-PUF states from SD...\r\n");
+  puf_load_states();
 
   while (1)
   {

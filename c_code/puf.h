@@ -56,6 +56,8 @@ extern void puf_challenge(uint32_t top_choice, uint32_t top_tune,
 
 /* ---- LR-PUF State API ---- */
 
+#define PUF_DOMAIN_STR_LEN 64
+
 /* Save the 11 states into SD Card */
 extern void puf_save_states(void);
 
@@ -65,6 +67,9 @@ extern void puf_load_states(void);
 /* Set the domain name for the given state interactively */
 extern void puf_set_domain(uint32_t state_index);
 
+/* Set the domain name for the given state from a string (non-interactive). */
+extern void puf_set_domain_str(uint32_t state_index, const char *domain);
+
 /* Print the domain name for the given state */
 extern void puf_print_domain(uint32_t state_index);
 
@@ -72,7 +77,21 @@ extern void puf_print_domain(uint32_t state_index);
 extern void puf_reconfigure_state(uint32_t state_index, uint32_t seed);
 
 /* Map an external challenge to a valid PUF challenge via the current state, measure the
- * PUF, and return the computed output hash. */
+ * PUF, print the output hash, and return it in out[32].
+ * Returns 0 on success, -1 on error. */
+extern int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t out[32]);
+
+/* Wrapper that calls puf_challenge_lr_ret and discards the return value (CLI use). */
 extern void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id);
+
+/* Returns the index of the first uninitialized state via *state_index.
+ * Returns 0 on success, -1 if all 11 states are in use. */
+extern int puf_get_free_state(uint32_t *state_index);
+
+/* Store the device Ed25519 public key and the raw 16-byte PUF challenge for an
+ * enrollment record.  Sets acknowledged = 0 (pending server confirmation). */
+extern void puf_store_enrollment(uint32_t state_index,
+                                 const uint8_t pubkey[32],
+                                 const uint8_t challenge_raw[16]);
 
 #endif

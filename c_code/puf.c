@@ -9,8 +9,10 @@
 
 #define NUM_STATES 11
 #define HASH_SIZE 32
-#define DOMAIN_STR_LEN 64
+#define DOMAIN_STR_LEN PUF_DOMAIN_STR_LEN
 #define MAX_POSSIBLE_CHALLENGES 384
+/* Serialised bytes per state: 32+4+(4*4)+64+32+16+4 = 168 */
+#define STATE_RECORD_SIZE 168u
 
 typedef struct
 {
@@ -18,6 +20,9 @@ typedef struct
     uint32_t is_initialized;
     uint32_t tc_last, tt_last, bc_last, bt_last;
     char domain_name[DOMAIN_STR_LEN];
+    uint8_t pubkey[32];        /* device Ed25519 public key set during enroll */
+    uint8_t challenge_raw[16]; /* raw 16-byte PUF challenge from enroll payload */
+    uint32_t acknowledged;     /* 0 = pending server ack, 1 = acknowledged */
 } puf_state_t;
 
 static puf_state_t lr_states[NUM_STATES];
@@ -708,19 +713,19 @@ void puf_reconfigure_state(uint32_t state_index, uint32_t seed)
     }
 }
 
-void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id)
+int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t out[32])
 {
     if (state_index >= NUM_STATES)
     {
         uart_puts("Invalid state index\r\n");
-        return;
+        return -1;
     }
     puf_state_t *st = &lr_states[state_index];
 
     if (!st->is_initialized || num_mem_valid_challenges == 0)
     {
         uart_puts("LR-PUF Error: Not initialized\r\n");
-        return;
+        return -1;
     }
 
     uint8_t new_hash[HASH_SIZE];
@@ -740,10 +745,9 @@ void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id)
     uint32_t tc, tt, bc, bt;
     unpack_challenge(mem_valid_challenges[idx], &tc, &tt, &bc, &bt);
 
-    // Map input challenge to intermediate choice-puf challenge
     uart_puts("LR-PUF: mapped input ");
     uart_print_hex(challenge_id);
-    uart_puts(" to choice PUF: tc=");
+    uart_puts(" -> tc=");
     uart_print_hex(tc);
     uart_puts(" tt=");
     uart_print_hex(tt);
@@ -783,28 +787,73 @@ void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id)
     puf_do_req(&hi, &lo);
 
     uint8_t puf_resp[8];
-    puf_resp[0] = hi >> 24;
-    puf_resp[1] = hi >> 16;
-    puf_resp[2] = hi >> 8;
-    puf_resp[3] = hi;
-    puf_resp[4] = lo >> 24;
-    puf_resp[5] = lo >> 16;
-    puf_resp[6] = lo >> 8;
-    puf_resp[7] = lo;
+    puf_resp[0] = (uint8_t)(hi >> 24);
+    puf_resp[1] = (uint8_t)(hi >> 16);
+    puf_resp[2] = (uint8_t)(hi >> 8);
+    puf_resp[3] = (uint8_t)hi;
+    puf_resp[4] = (uint8_t)(lo >> 24);
+    puf_resp[5] = (uint8_t)(lo >> 16);
+    puf_resp[6] = (uint8_t)(lo >> 8);
+    puf_resp[7] = (uint8_t)lo;
 
-    uint8_t output_hash[HASH_SIZE];
     crypto_blake2b_init(&ctx, HASH_SIZE);
     crypto_blake2b_update(&ctx, st->hash_value, HASH_SIZE);
     crypto_blake2b_update(&ctx, (const uint8_t *)&challenge_id, 4);
     crypto_blake2b_update(&ctx, puf_resp, 8);
-    crypto_blake2b_final(&ctx, output_hash);
+    crypto_blake2b_final(&ctx, out);
 
     uart_puts("LR-PUF output hash: ");
     for (int i = 0; i < HASH_SIZE; i++)
-    {
-        uart_print_hex_byte(output_hash[i]);
-    }
+        uart_print_hex_byte(out[i]);
     uart_puts("\r\n");
+
+    return 0;
+}
+
+void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id)
+{
+    uint8_t out[HASH_SIZE];
+    puf_challenge_lr_ret(state_index, challenge_id, out);
+}
+
+int puf_get_free_state(uint32_t *state_index)
+{
+    uint32_t i;
+    for (i = 0; i < NUM_STATES; i++)
+    {
+        if (!lr_states[i].is_initialized)
+        {
+            *state_index = i;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+void puf_set_domain_str(uint32_t state_index, const char *domain)
+{
+    int i;
+    if (state_index >= NUM_STATES)
+        return;
+    puf_state_t *st = &lr_states[state_index];
+    for (i = 0; domain[i] && i < DOMAIN_STR_LEN - 1; i++)
+        st->domain_name[i] = domain[i];
+    st->domain_name[i] = '\0';
+}
+
+void puf_store_enrollment(uint32_t state_index,
+                          const uint8_t pubkey[32],
+                          const uint8_t challenge_raw[16])
+{
+    int i;
+    if (state_index >= NUM_STATES)
+        return;
+    puf_state_t *st = &lr_states[state_index];
+    for (i = 0; i < 32; i++)
+        st->pubkey[i] = pubkey[i];
+    for (i = 0; i < 16; i++)
+        st->challenge_raw[i] = challenge_raw[i];
+    st->acknowledged = 0;
 }
 
 void puf_save_states(void)
@@ -820,8 +869,7 @@ void puf_save_states(void)
     for (state_idx = 0; state_idx < NUM_STATES; state_idx++)
     {
         puf_state_t *st = &lr_states[state_idx];
-        /* 32 (hash) + 20 (params) + 64 (domain) = 116 bytes per state */
-        if (offset + 116u > 512u)
+        if (offset + STATE_RECORD_SIZE > 512u)
         {
             if (sd_write_block(block++, sd_buf) < 0)
             {
@@ -845,7 +893,13 @@ void puf_save_states(void)
         write_u32_le(sd_buf + offset, st->bt_last);
         offset += 4u;
         for (i = 0; i < DOMAIN_STR_LEN; i++)
-            sd_buf[offset++] = st->domain_name[i];
+            sd_buf[offset++] = (uint8_t)st->domain_name[i];
+        for (i = 0; i < 32; i++)
+            sd_buf[offset++] = st->pubkey[i];
+        for (i = 0; i < 16; i++)
+            sd_buf[offset++] = st->challenge_raw[i];
+        write_u32_le(sd_buf + offset, st->acknowledged);
+        offset += 4u;
     }
     if (sd_write_block(block, sd_buf) < 0)
     {
@@ -871,7 +925,7 @@ void puf_load_states(void)
     for (state_idx = 0; state_idx < NUM_STATES; state_idx++)
     {
         puf_state_t *st = &lr_states[state_idx];
-        if (offset + 116u > 512u)
+        if (offset + STATE_RECORD_SIZE > 512u)
         {
             if (sd_read_block(block++, sd_buf) < 0)
             {
@@ -893,7 +947,13 @@ void puf_load_states(void)
         st->bt_last = read_u32_le(sd_buf + offset);
         offset += 4u;
         for (i = 0; i < DOMAIN_STR_LEN; i++)
-            st->domain_name[i] = sd_buf[offset++];
+            st->domain_name[i] = (char)sd_buf[offset++];
+        for (i = 0; i < 32; i++)
+            st->pubkey[i] = sd_buf[offset++];
+        for (i = 0; i < 16; i++)
+            st->challenge_raw[i] = sd_buf[offset++];
+        st->acknowledged = read_u32_le(sd_buf + offset);
+        offset += 4u;
     }
     uart_puts("LR-PUF: States loaded from SD card.\r\n");
 }
