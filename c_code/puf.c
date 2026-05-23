@@ -1057,3 +1057,68 @@ void puf_mark_acknowledged(uint32_t state_index)
     uart_print_hex(state_index);
     uart_puts(" acknowledged.\r\n");
 }
+
+int puf_get_slot_status(uint32_t state_index,
+                        uint8_t *is_init,
+                        uint8_t *acknowledged,
+                        char domain_out[65])
+{
+    uint32_t i;
+    if (state_index >= NUM_STATES)
+        return -1;
+    puf_state_t *st = &lr_states[state_index];
+    *is_init      = st->is_initialized ? 1 : 0;
+    *acknowledged = (st->is_initialized && st->acknowledged) ? 1 : 0;
+    for (i = 0; i < 64 && st->domain_name[i]; i++)
+        domain_out[i] = st->domain_name[i];
+    domain_out[i] = '\0';
+    return 0;
+}
+
+void puf_clear_states(void)
+{
+    uint32_t i, j;
+    for (i = 0; i < NUM_STATES; i++)
+    {
+        puf_state_t *st = &lr_states[i];
+        for (j = 0; j < HASH_SIZE; j++)      st->hash_value[j]   = 0;
+        st->is_initialized = 0;
+        st->tc_last = st->tt_last = st->bc_last = st->bt_last = 0;
+        for (j = 0; j < DOMAIN_STR_LEN; j++) st->domain_name[j]  = '\0';
+        for (j = 0; j < 32; j++)             st->pubkey[j]        = 0;
+        for (j = 0; j < 16; j++)             st->challenge_raw[j] = 0;
+        for (j = 0; j < 32; j++)             st->pk_server[j]     = 0;
+        st->acknowledged = 0;
+    }
+    puf_save_states();
+    uart_puts("LR-PUF: All enrollment slots cleared.\r\n");
+}
+
+void puf_list_states(void)
+{
+    uint32_t i;
+    uint32_t found = 0;
+    uart_puts("LR-PUF enrollment slots:\r\n");
+    for (i = 0; i < NUM_STATES; i++)
+    {
+        puf_state_t *st = &lr_states[i];
+        uart_puts("  [");
+        uart_print_hex(i);
+        uart_puts("] ");
+        if (!st->is_initialized)
+        {
+            uart_puts("(empty)\r\n");
+        }
+        else
+        {
+            found++;
+            uart_puts(st->domain_name);
+            uart_puts("  ");
+            uart_puts(st->acknowledged ? "ACKNOWLEDGED" : "PENDING");
+            uart_puts("\r\n");
+        }
+    }
+    uart_puts("Total: ");
+    uart_print_hex(found);
+    uart_puts(" enrolled\r\n");
+}

@@ -107,4 +107,18 @@ extern int puf_find_state_by_domain(const char *domain,
 /* Set acknowledged = 1 for the given state slot and save states to SD. */
 extern void puf_mark_acknowledged(uint32_t state_index);
 
+/* Fill *is_init, *acknowledged, and domain_out (NUL-terminated, buf ≥ 65 bytes)
+ * for the given slot.  Returns 0 on success, -1 if state_index is out of range. */
+extern int puf_get_slot_status(uint32_t state_index,
+                                uint8_t *is_init,
+                                uint8_t *acknowledged,
+                                char domain_out[65]);
+
+/* Zero all 11 state slots in SRAM and persist to SD.
+ * Does NOT touch the valid-challenge table (blocks 0-3) or the CA key (block 9). */
+extern void puf_clear_states(void);
+
+/* Print a one-line summary (domain + ack status) for every state slot. */
+extern void puf_list_states(void);
+
 #endif

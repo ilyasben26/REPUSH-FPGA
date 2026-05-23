@@ -48,6 +48,8 @@ extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 #define PROTO_CMD_PUF_SAVE_STATES           10
 #define PROTO_CMD_PUF_FIND_STATE_BY_DOMAIN  11
 #define PROTO_CMD_PUF_MARK_ACKNOWLEDGED     12
+#define PROTO_CMD_PUF_CLEAR_STATES          13
+#define PROTO_CMD_PUF_GET_SLOT_STATUS       14
 
 #define PROTO_ERR_BAD_CRC 1
 #define PROTO_ERR_BAD_LEN 2
@@ -351,6 +353,41 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
     }
     puf_mark_acknowledged(payload[0]);
     proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_CLEAR_STATES)
+  {
+    puf_clear_states();
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, 0, 0);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_GET_SLOT_STATUS)
+  {
+    /* payload: state_index(1)
+     * response: is_initialized(1) + acknowledged(1) + domain_str(0..64, NUL-terminated) */
+    uint8_t resp[67];
+    char domain[65];
+    uint8_t is_init = 0, acked = 0;
+    uint32_t dlen, i;
+    if (payload_len < 1)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    if (puf_get_slot_status(payload[0], &is_init, &acked, domain) < 0)
+    {
+      proto_send_error(seq, cmd, 1); /* 1 = invalid index */
+      return;
+    }
+    resp[0] = is_init;
+    resp[1] = acked;
+    dlen = 0;
+    for (i = 0; domain[i]; i++)
+      resp[2 + dlen++] = (uint8_t)domain[i];
+    resp[2 + dlen++] = '\0';
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, resp, (uint16_t)(2 + dlen));
     return;
   }
 
@@ -960,6 +997,8 @@ void help(void)
   uart_puts("sd state      : set domain name for LR-PUF state (interactively asks for string)\r\n");
   uart_puts("pd state      : print domain name for LR-PUF state\r\n");
   uart_puts("ck            : check CA public key in SD card\r\n");
+  uart_puts("xc            : clear all LR-PUF enrollment slots (keeps challenges + CA key)\r\n");
+  uart_puts("xs            : show all LR-PUF enrollment slots and ack status\r\n");
   uart_puts("   all numbers are hex\r\n");
 }
 
@@ -1160,7 +1199,9 @@ struct command
     {"pd", 1, .u.func1 = puf_print_domain},
     {"rs", 2, .u.func2 = puf_reconfigure_state},
     {"cl", 2, .u.func2 = puf_challenge_lr},
-    {"ck", 0, .u.func0 = debug_ca_key}};
+    {"ck", 0, .u.func0 = debug_ca_key},
+    {"xc", 0, .u.func0 = puf_clear_states},
+    {"xs", 0, .u.func0 = puf_list_states}};
 
 void eat_spaces(char **buf, uint32_t *len)
 {
