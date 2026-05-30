@@ -77,9 +77,10 @@ extern void puf_print_domain(uint32_t state_index);
 extern void puf_reconfigure_state(uint32_t state_index, uint32_t seed);
 
 /* Map an external challenge to a valid PUF challenge via the current state, measure the
- * PUF, print the output hash, and return it in out[32].
+ * PUF with per-bit majority voting over `count` samples, hash the result, and return it
+ * in out[32].  count=1 gives the single-shot behaviour.
  * Returns 0 on success, -1 on error. */
-extern int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t out[32]);
+extern int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t out[32], uint32_t count);
 
 /* Wrapper that calls puf_challenge_lr_ret and discards the return value (CLI use). */
 extern void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id);

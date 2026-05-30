@@ -714,7 +714,7 @@ void puf_reconfigure_state(uint32_t state_index, uint32_t seed)
     }
 }
 
-int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t out[32])
+int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t out[32], uint32_t count)
 {
     if (state_index >= NUM_STATES)
     {
@@ -784,8 +784,31 @@ int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t ou
     puf_send_cmd(top_phi, top_pattern);
     puf_send_cmd(bot_phi, bot_pattern);
 
+    /* Per-bit majority vote over `count` raw PUF samples before hashing.
+     * A single flipped bit in the raw response would avalanche through Blake2b,
+     * so voting must happen here on the 64 raw bits, not on the hash output. */
+    uint32_t bit_ones[64];
     uint32_t hi, lo;
-    puf_do_req(&hi, &lo);
+    uint32_t mv_bit;
+
+    if (count < 1u) count = 1u;
+    for (mv_bit = 0u; mv_bit < 64u; mv_bit++) bit_ones[mv_bit] = 0u;
+    for (mv_bit = 0u; mv_bit < count; mv_bit++)
+    {
+        uint32_t s_hi, s_lo;
+        puf_do_req(&s_hi, &s_lo);
+        for (uint32_t b = 0u; b < 32u; b++)
+        {
+            if ((s_lo >> b) & 1u) bit_ones[b]++;
+            if ((s_hi >> b) & 1u) bit_ones[b + 32u]++;
+        }
+    }
+    hi = 0u; lo = 0u;
+    for (mv_bit = 0u; mv_bit < 32u; mv_bit++)
+    {
+        if (bit_ones[mv_bit]       * 2u >= count) lo |= (1u << mv_bit);
+        if (bit_ones[mv_bit + 32u] * 2u >= count) hi |= (1u << mv_bit);
+    }
 
     uint8_t puf_resp[8];
     puf_resp[0] = (uint8_t)(hi >> 24);
@@ -814,7 +837,7 @@ int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t ou
 void puf_challenge_lr(uint32_t state_index, uint32_t challenge_id)
 {
     uint8_t out[HASH_SIZE];
-    puf_challenge_lr_ret(state_index, challenge_id, out);
+    puf_challenge_lr_ret(state_index, challenge_id, out, 1u);
 }
 
 int puf_get_free_state(uint32_t *state_index)

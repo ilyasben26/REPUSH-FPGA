@@ -253,16 +253,18 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
   if (cmd == PROTO_CMD_PUF_CHALLENGE_LR)
   {
     uint8_t puf_out[32];
-    uint32_t state_idx, challenge_id;
+    uint32_t state_idx, challenge_id, count;
     if (payload_len < 5)
     {
       proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
       return;
     }
-    state_idx = payload[0];
+    state_idx    = payload[0];
     challenge_id = (uint32_t)payload[1] | ((uint32_t)payload[2] << 8) |
                    ((uint32_t)payload[3] << 16) | ((uint32_t)payload[4] << 24);
-    if (puf_challenge_lr_ret(state_idx, challenge_id, puf_out) < 0)
+    /* Optional 6th byte: majority-vote sample count (0 or absent → 1). */
+    count = (payload_len >= 6u && payload[5] > 0u) ? (uint32_t)payload[5] : 1u;
+    if (puf_challenge_lr_ret(state_idx, challenge_id, puf_out, count) < 0)
     {
       proto_send_error(seq, cmd, 2); /* 2 = not initialized / no challenges */
       return;
