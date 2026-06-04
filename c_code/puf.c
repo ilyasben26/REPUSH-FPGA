@@ -65,12 +65,20 @@ static void unpack_challenge(uint16_t packed, uint32_t *tc, uint32_t *tt, uint32
  *   0x5 — BOTTOM_PATTERN payload_hi[0]=in_bit, payload_lo=32-bit pattern
  */
 
+// MMIO adresses for the PUF peripheral
 #define PUF_PAYLOAD_HI ((volatile uint32_t *)0x80000040u)
 #define PUF_PAYLOAD_LO ((volatile uint32_t *)0x80000044u)
 #define PUF_TRIGGER ((volatile uint32_t *)0x80000048u)
 #define PUF_STATUS ((volatile uint32_t *)0x80000048u)
 #define PUF_RESP_HI ((volatile uint32_t *)0x80000040u)
 #define PUF_RESP_LO ((volatile uint32_t *)0x80000044u)
+
+// PUF Commands
+#define PUF_REQ 0x10000000u
+#define PUF_TUNE 0x20000000u
+#define PUF_CHOICE_SET 0x30000000u
+#define PUF_TOP_PATTERN 0x40000000u
+#define PUF_BOTTOM_PATTERN 0x50000000u
 
 static void puf_send_cmd(uint32_t phi, uint32_t plo)
 {
@@ -81,7 +89,7 @@ static void puf_send_cmd(uint32_t phi, uint32_t plo)
 
 static void puf_do_req(uint32_t *hi, uint32_t *lo)
 {
-    puf_send_cmd(0x10000000u, 0x00000000u);
+    puf_send_cmd(PUF_REQ, 0x00000000u);
     while (!(*PUF_STATUS & 1u))
     {
     }
@@ -105,7 +113,7 @@ void puf_set_tune(uint32_t upper, uint32_t lower)
 {
     uint32_t data = ((upper & 7u) << 5) | ((lower & 7u) << 2);
 
-    puf_send_cmd(0x20000000u, data);
+    puf_send_cmd(PUF_TUNE, data);
     uart_puts("PUF tune set\r\n");
 }
 
@@ -117,7 +125,7 @@ void puf_set_choice(uint32_t top, uint32_t bottom)
 
     /* Send CHOICE_SET command */
     choice_data = ((top & 3u) << 2) | (bottom & 3u);
-    puf_send_cmd(0x30000000u, choice_data);
+    puf_send_cmd(PUF_CHOICE_SET, choice_data);
 
     /*
      * Derive shift-register patterns from the choice indices.
@@ -132,23 +140,23 @@ void puf_set_choice(uint32_t top, uint32_t bottom)
     if (top % 2u != 0u)
     {
         top_pattern = 0xAAAAAAAAu;
-        top_phi = 0x40000000u; /* in_bit = 0 */
+        top_phi = PUF_TOP_PATTERN; /* in_bit = 0 */
     }
     else
     {
         top_pattern = 0x55555555u;
-        top_phi = 0x40000001u; /* in_bit = 1 */
+        top_phi = PUF_TOP_PATTERN | 1u; /* in_bit = 1 */
     }
 
     if (bottom % 2u == 0u)
     {
         bot_pattern = 0xAAAAAAAAu;
-        bot_phi = 0x50000000u; /* in_bit = 0 */
+        bot_phi = PUF_BOTTOM_PATTERN; /* in_bit = 0 */
     }
     else
     {
         bot_pattern = 0x55555555u;
-        bot_phi = 0x50000001u; /* in_bit = 1 */
+        bot_phi = PUF_BOTTOM_PATTERN | 1u; /* in_bit = 1 */
     }
 
     puf_send_cmd(top_phi, top_pattern);
@@ -165,31 +173,31 @@ void puf_challenge(uint32_t top_choice, uint32_t top_tune,
     uint32_t hi, lo;
 
     tune_data = ((top_tune & 7u) << 5) | ((bottom_tune & 7u) << 2);
-    puf_send_cmd(0x20000000u, tune_data);
+    puf_send_cmd(PUF_TUNE, tune_data);
 
     choice_data = ((top_choice & 3u) << 2) | (bottom_choice & 3u);
-    puf_send_cmd(0x30000000u, choice_data);
+    puf_send_cmd(PUF_CHOICE_SET, choice_data);
 
     if (top_choice % 2u != 0u)
     {
         top_pattern = 0xAAAAAAAAu;
-        top_phi = 0x40000000u;
+        top_phi = PUF_TOP_PATTERN;
     }
     else
     {
         top_pattern = 0x55555555u;
-        top_phi = 0x40000001u;
+        top_phi = PUF_TOP_PATTERN | 1u;
     }
 
     if (bottom_choice % 2u == 0u)
     {
         bot_pattern = 0xAAAAAAAAu;
-        bot_phi = 0x50000000u;
+        bot_phi = PUF_BOTTOM_PATTERN;
     }
     else
     {
         bot_pattern = 0x55555555u;
-        bot_phi = 0x50000001u;
+        bot_phi = PUF_BOTTOM_PATTERN | 1u;
     }
 
     puf_send_cmd(top_phi, top_pattern);
@@ -231,25 +239,25 @@ void puf_scan(void)
         if (tc % 2u != 0u)
         {
             top_pattern = 0xAAAAAAAAu;
-            top_phi = 0x40000000u;
+            top_phi = PUF_TOP_PATTERN;
         }
         else
         {
             top_pattern = 0x55555555u;
-            top_phi = 0x40000001u;
+            top_phi = PUF_TOP_PATTERN | 1u;
         }
         if (bc % 2u == 0u)
         {
             bot_pattern = 0xAAAAAAAAu;
-            bot_phi = 0x50000000u;
+            bot_phi = PUF_BOTTOM_PATTERN;
         }
         else
         {
             bot_pattern = 0x55555555u;
-            bot_phi = 0x50000001u;
+            bot_phi = PUF_BOTTOM_PATTERN | 1u;
         }
 
-        puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
+        puf_send_cmd(PUF_CHOICE_SET, ((tc & 3u) << 2) | (bc & 3u));
         puf_send_cmd(top_phi, top_pattern);
         puf_send_cmd(bot_phi, bot_pattern);
 
@@ -257,7 +265,7 @@ void puf_scan(void)
         {
             for (bt = 0; bt < 8u; bt++)
             {
-                puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+                puf_send_cmd(PUF_TUNE, ((tt & 7u) << 5) | ((bt & 7u) << 2));
                 puf_do_req(&hi, &lo);
                 if (hi != 0xFFFFFFFFu || lo != 0xFFFFFFFFu)
                 {
@@ -381,25 +389,25 @@ void puf_save(void)
         if (tc % 2u != 0u)
         {
             top_pattern = 0xAAAAAAAAu;
-            top_phi = 0x40000000u;
+            top_phi = PUF_TOP_PATTERN;
         }
         else
         {
             top_pattern = 0x55555555u;
-            top_phi = 0x40000001u;
+            top_phi = PUF_TOP_PATTERN | 1u;
         }
         if (bc % 2u == 0u)
         {
             bot_pattern = 0xAAAAAAAAu;
-            bot_phi = 0x50000000u;
+            bot_phi = PUF_BOTTOM_PATTERN;
         }
         else
         {
             bot_pattern = 0x55555555u;
-            bot_phi = 0x50000001u;
+            bot_phi = PUF_BOTTOM_PATTERN | 1u;
         }
 
-        puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
+        puf_send_cmd(PUF_CHOICE_SET, ((tc & 3u) << 2) | (bc & 3u));
         puf_send_cmd(top_phi, top_pattern);
         puf_send_cmd(bot_phi, bot_pattern);
 
@@ -407,7 +415,7 @@ void puf_save(void)
         {
             for (bt = 0; bt < 8u; bt++)
             {
-                puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+                puf_send_cmd(PUF_TUNE, ((tt & 7u) << 5) | ((bt & 7u) << 2));
                 puf_do_req(&hi, &lo);
                 if (hi != 0xFFFFFFFFu || lo != 0xFFFFFFFFu)
                 {
@@ -575,27 +583,27 @@ void puf_key(void)
     bt = sd_buf[offset + 3u];
 
     /* configure PUF with the selected challenge */
-    puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
-    puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
+    puf_send_cmd(PUF_TUNE, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+    puf_send_cmd(PUF_CHOICE_SET, ((tc & 3u) << 2) | (bc & 3u));
     if (tc % 2u != 0u)
     {
         top_pattern = 0xAAAAAAAAu;
-        top_phi = 0x40000000u;
+        top_phi = PUF_TOP_PATTERN;
     }
     else
     {
         top_pattern = 0x55555555u;
-        top_phi = 0x40000001u;
+        top_phi = PUF_TOP_PATTERN | 1u;
     }
     if (bc % 2u == 0u)
     {
         bot_pattern = 0xAAAAAAAAu;
-        bot_phi = 0x50000000u;
+        bot_phi = PUF_BOTTOM_PATTERN;
     }
     else
     {
         bot_pattern = 0x55555555u;
-        bot_phi = 0x50000001u;
+        bot_phi = PUF_BOTTOM_PATTERN | 1u;
     }
     puf_send_cmd(top_phi, top_pattern);
     puf_send_cmd(bot_phi, bot_pattern);
@@ -640,27 +648,27 @@ void puf_reconfigure_state(uint32_t state_index, uint32_t seed)
         unpack_challenge(mem_valid_challenges[idx], &tc, &tt, &bc, &bt);
 
         uint32_t top_pattern, top_phi, bot_pattern, bot_phi;
-        puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
-        puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
+        puf_send_cmd(PUF_TUNE, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+        puf_send_cmd(PUF_CHOICE_SET, ((tc & 3u) << 2) | (bc & 3u));
         if (tc % 2u != 0u)
         {
             top_pattern = 0xAAAAAAAAu;
-            top_phi = 0x40000000u;
+            top_phi = PUF_TOP_PATTERN;
         }
         else
         {
             top_pattern = 0x55555555u;
-            top_phi = 0x40000001u;
+            top_phi = PUF_TOP_PATTERN | 1u;
         }
         if (bc % 2u == 0u)
         {
             bot_pattern = 0xAAAAAAAAu;
-            bot_phi = 0x50000000u;
+            bot_phi = PUF_BOTTOM_PATTERN;
         }
         else
         {
             bot_pattern = 0x55555555u;
-            bot_phi = 0x50000001u;
+            bot_phi = PUF_BOTTOM_PATTERN | 1u;
         }
         puf_send_cmd(top_phi, top_pattern);
         puf_send_cmd(bot_phi, bot_pattern);
@@ -759,27 +767,27 @@ int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t ou
     uart_puts("\r\n");
 
     uint32_t top_pattern, top_phi, bot_pattern, bot_phi;
-    puf_send_cmd(0x20000000u, ((tt & 7u) << 5) | ((bt & 7u) << 2));
-    puf_send_cmd(0x30000000u, ((tc & 3u) << 2) | (bc & 3u));
+    puf_send_cmd(PUF_TUNE, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+    puf_send_cmd(PUF_CHOICE_SET, ((tc & 3u) << 2) | (bc & 3u));
     if (tc % 2u != 0u)
     {
         top_pattern = 0xAAAAAAAAu;
-        top_phi = 0x40000000u;
+        top_phi = PUF_TOP_PATTERN;
     }
     else
     {
         top_pattern = 0x55555555u;
-        top_phi = 0x40000001u;
+        top_phi = PUF_TOP_PATTERN | 1u;
     }
     if (bc % 2u == 0u)
     {
         bot_pattern = 0xAAAAAAAAu;
-        bot_phi = 0x50000000u;
+        bot_phi = PUF_BOTTOM_PATTERN;
     }
     else
     {
         bot_pattern = 0x55555555u;
-        bot_phi = 0x50000001u;
+        bot_phi = PUF_BOTTOM_PATTERN | 1u;
     }
     puf_send_cmd(top_phi, top_pattern);
     puf_send_cmd(bot_phi, bot_pattern);
@@ -791,23 +799,30 @@ int puf_challenge_lr_ret(uint32_t state_index, uint32_t challenge_id, uint8_t ou
     uint32_t hi, lo;
     uint32_t mv_bit;
 
-    if (count < 1u) count = 1u;
-    for (mv_bit = 0u; mv_bit < 64u; mv_bit++) bit_ones[mv_bit] = 0u;
+    if (count < 1u)
+        count = 1u;
+    for (mv_bit = 0u; mv_bit < 64u; mv_bit++)
+        bit_ones[mv_bit] = 0u;
     for (mv_bit = 0u; mv_bit < count; mv_bit++)
     {
         uint32_t s_hi, s_lo;
         puf_do_req(&s_hi, &s_lo);
         for (uint32_t b = 0u; b < 32u; b++)
         {
-            if ((s_lo >> b) & 1u) bit_ones[b]++;
-            if ((s_hi >> b) & 1u) bit_ones[b + 32u]++;
+            if ((s_lo >> b) & 1u)
+                bit_ones[b]++;
+            if ((s_hi >> b) & 1u)
+                bit_ones[b + 32u]++;
         }
     }
-    hi = 0u; lo = 0u;
+    hi = 0u;
+    lo = 0u;
     for (mv_bit = 0u; mv_bit < 32u; mv_bit++)
     {
-        if (bit_ones[mv_bit]       * 2u >= count) lo |= (1u << mv_bit);
-        if (bit_ones[mv_bit + 32u] * 2u >= count) hi |= (1u << mv_bit);
+        if (bit_ones[mv_bit] * 2u >= count)
+            lo |= (1u << mv_bit);
+        if (bit_ones[mv_bit + 32u] * 2u >= count)
+            hi |= (1u << mv_bit);
     }
 
     uint8_t puf_resp[8];
@@ -1039,10 +1054,10 @@ void puf_print_domain(uint32_t state_index)
 }
 
 int puf_find_state_by_domain(const char *domain,
-                              uint32_t *state_idx,
-                              uint8_t pubkey_out[32],
-                              uint8_t challenge_out[16],
-                              uint8_t pk_server_out[32])
+                             uint32_t *state_idx,
+                             uint8_t pubkey_out[32],
+                             uint8_t challenge_out[16],
+                             uint8_t pk_server_out[32])
 {
     uint32_t i, j;
     for (i = 0; i < NUM_STATES; i++)
@@ -1051,17 +1066,25 @@ int puf_find_state_by_domain(const char *domain,
             continue;
         /* compare NUL-terminated strings without libc */
         int match = 1;
-        for (j = 0; ; j++)
+        for (j = 0;; j++)
         {
-            if (lr_states[i].domain_name[j] != domain[j]) { match = 0; break; }
-            if (domain[j] == '\0') break;
+            if (lr_states[i].domain_name[j] != domain[j])
+            {
+                match = 0;
+                break;
+            }
+            if (domain[j] == '\0')
+                break;
         }
         if (!match)
             continue;
         *state_idx = i;
-        for (j = 0; j < 32; j++) pubkey_out[j]    = lr_states[i].pubkey[j];
-        for (j = 0; j < 16; j++) challenge_out[j]  = lr_states[i].challenge_raw[j];
-        for (j = 0; j < 32; j++) pk_server_out[j]  = lr_states[i].pk_server[j];
+        for (j = 0; j < 32; j++)
+            pubkey_out[j] = lr_states[i].pubkey[j];
+        for (j = 0; j < 16; j++)
+            challenge_out[j] = lr_states[i].challenge_raw[j];
+        for (j = 0; j < 32; j++)
+            pk_server_out[j] = lr_states[i].pk_server[j];
         return 0;
     }
     return -1;
@@ -1090,7 +1113,7 @@ int puf_get_slot_status(uint32_t state_index,
     if (state_index >= NUM_STATES)
         return -1;
     puf_state_t *st = &lr_states[state_index];
-    *is_init      = st->is_initialized ? 1 : 0;
+    *is_init = st->is_initialized ? 1 : 0;
     *acknowledged = (st->is_initialized && st->acknowledged) ? 1 : 0;
     for (i = 0; i < 64 && st->domain_name[i]; i++)
         domain_out[i] = st->domain_name[i];
@@ -1104,13 +1127,18 @@ void puf_clear_states(void)
     for (i = 0; i < NUM_STATES; i++)
     {
         puf_state_t *st = &lr_states[i];
-        for (j = 0; j < HASH_SIZE; j++)      st->hash_value[j]   = 0;
+        for (j = 0; j < HASH_SIZE; j++)
+            st->hash_value[j] = 0;
         st->is_initialized = 0;
         st->tc_last = st->tt_last = st->bc_last = st->bt_last = 0;
-        for (j = 0; j < DOMAIN_STR_LEN; j++) st->domain_name[j]  = '\0';
-        for (j = 0; j < 32; j++)             st->pubkey[j]        = 0;
-        for (j = 0; j < 16; j++)             st->challenge_raw[j] = 0;
-        for (j = 0; j < 32; j++)             st->pk_server[j]     = 0;
+        for (j = 0; j < DOMAIN_STR_LEN; j++)
+            st->domain_name[j] = '\0';
+        for (j = 0; j < 32; j++)
+            st->pubkey[j] = 0;
+        for (j = 0; j < 16; j++)
+            st->challenge_raw[j] = 0;
+        for (j = 0; j < 32; j++)
+            st->pk_server[j] = 0;
         st->acknowledged = 0;
     }
     puf_save_states();

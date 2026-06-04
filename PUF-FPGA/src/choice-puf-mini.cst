@@ -1,0 +1,29 @@
+//Copyright (C)2014-2026 Gowin Semiconductor Corporation.
+//All rights reserved. 
+//File Title: Physical Constraints file
+//Tool Version: V1.9.12.02_SP1
+//Part Number: GW2AR-LV18QN88C8/I7
+//Device: GW2AR-18
+//Device Version: C
+//Created Time: Mon 04 06 06:46:06 2026
+
+//IO_LOC "ws2812_din" 79;
+//IO_PORT "ws2812_din" DRIVE=8;
+IO_LOC "leds[5]" 20;
+IO_PORT "leds[5]" IO_TYPE=LVCMOS33;
+IO_LOC "leds[4]" 19;
+IO_PORT "leds[4]" IO_TYPE=LVCMOS33;
+IO_LOC "leds[3]" 18;
+IO_PORT "leds[3]" IO_TYPE=LVCMOS33;
+IO_LOC "leds[2]" 17;
+IO_PORT "leds[2]" IO_TYPE=LVCMOS33;
+IO_LOC "leds[1]" 16;
+IO_PORT "leds[1]" IO_TYPE=LVCMOS33;
+IO_LOC "leds[0]" 15;
+IO_PORT "leds[0]" IO_TYPE=LVCMOS33;
+IO_LOC "tx" 74;
+IO_PORT "tx" IO_TYPE=LVCMOS33;
+IO_LOC "rx" 73;
+IO_PORT "rx" IO_TYPE=LVCMOS33;
+IO_LOC "clk" 4;
+IO_PORT "clk" IO_TYPE=LVCMOS33;

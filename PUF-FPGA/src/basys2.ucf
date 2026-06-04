@@ -1,0 +1,16 @@
+# Clock pin for Basys2 Board (50 MHz)
+NET "clk" LOC = "B8";
+
+NET "tx" LOC = "A3";
+NET "rx" LOC = "B2";
+
+
+
+NET "leds[0]" LOC = "M5";
+NET "leds[1]" LOC = "M11";
+NET "leds[2]" LOC = "P7";
+NET "leds[3]" LOC = "P6";
+NET "leds[4]" LOC = "N5";
+NET "leds[5]" LOC = "N4";
+NET "leds[6]" LOC = "P4";
+NET "leds[7]" LOC = "G1";

@@ -4,6 +4,6 @@ impl/
 *.bin
 *.elf
 *.hex
-PUF-FPGA/
 examples/
 .env/
+.DS_Store
