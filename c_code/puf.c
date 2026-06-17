@@ -3,6 +3,7 @@
 #include "sd_card_cgpt.h"
 #include "monocypher.h"
 #include "puf.h"
+#include "bch_puf.h"
 #include "readtime.h"
 
 /* ---- LR-PUF State integration declarations ---- */
@@ -1172,4 +1173,224 @@ void puf_list_states(void)
     uart_puts("Total: ");
     uart_print_hex(found);
     uart_puts(" enrolled\r\n");
+}
+
+/* ============================================================
+ * BCH Fuzzy Commitment — PUF error correction
+ * ============================================================ */
+
+#define BCH_HELPER_SD_BLOCK 16u
+#define BCH_HELPER_MAGIC    0x42434831u /* "BCH1" */
+
+typedef struct {
+    uint8_t helper[8];  /* y XOR W */
+    uint8_t ecc[4];     /* BCH ECC of W */
+} bch_helper_rec_t;
+
+static bch_helper_rec_t bch_helpers[NUM_STATES];
+static uint32_t bch_helpers_valid; /* bitmask: bit i = 1 if state i enrolled */
+
+void puf_bch_load_helpers(void)
+{
+    int i, j;
+    uint32_t offset;
+
+    if (sd_read_block(BCH_HELPER_SD_BLOCK, sd_buf) < 0) {
+        uart_puts("BCH: SD read error\r\n");
+        return;
+    }
+    if (read_u32_le(sd_buf) != BCH_HELPER_MAGIC) {
+        bch_helpers_valid = 0;
+        return;
+    }
+    bch_helpers_valid = read_u32_le(sd_buf + 4);
+    offset = 8u;
+    for (i = 0; i < NUM_STATES; i++) {
+        for (j = 0; j < 8; j++)
+            bch_helpers[i].helper[j] = sd_buf[offset++];
+        for (j = 0; j < 4; j++)
+            bch_helpers[i].ecc[j] = sd_buf[offset++];
+    }
+    uart_puts("BCH: helpers loaded\r\n");
+}
+
+static void bch_save_helpers(void)
+{
+    int i, j;
+    uint32_t offset;
+
+    for (i = 0; i < 512; i++) sd_buf[i] = 0;
+    write_u32_le(sd_buf,     BCH_HELPER_MAGIC);
+    write_u32_le(sd_buf + 4, bch_helpers_valid);
+    offset = 8u;
+    for (i = 0; i < NUM_STATES; i++) {
+        for (j = 0; j < 8; j++)
+            sd_buf[offset++] = bch_helpers[i].helper[j];
+        for (j = 0; j < 4; j++)
+            sd_buf[offset++] = bch_helpers[i].ecc[j];
+    }
+    if (sd_write_block(BCH_HELPER_SD_BLOCK, sd_buf) < 0)
+        uart_puts("BCH: SD write error\r\n");
+    else
+        uart_puts("BCH: helpers saved\r\n");
+}
+
+/*
+ * Shared PUF setup and measurement for BCH enroll/query.
+ * Performs the LR-PUF map_in, configures the PUF, then takes `count`
+ * majority-voted samples.  Writes raw 8-byte response to resp[8].
+ * Returns 0 on success, -1 on error.
+ */
+static int puf_lr_measure_raw(uint32_t state_index, uint32_t challenge_id,
+                               uint32_t count, uint8_t resp[8])
+{
+    puf_state_t *st;
+    uint8_t new_hash[HASH_SIZE];
+    crypto_blake2b_ctx ctx;
+    uint32_t combined, idx, tc, tt, bc, bt;
+    uint32_t top_pattern, top_phi, bot_pattern, bot_phi;
+    uint32_t bit_ones[64], hi, lo, mv;
+
+    if (state_index >= NUM_STATES) return -1;
+    st = &lr_states[state_index];
+    if (!st->is_initialized || num_mem_valid_challenges == 0) return -1;
+
+    /* map_in: derive physical PUF challenge from state+challenge_id */
+    crypto_blake2b_init(&ctx, HASH_SIZE);
+    crypto_blake2b_update(&ctx, st->hash_value, HASH_SIZE);
+    crypto_blake2b_update(&ctx, (const uint8_t *)&challenge_id, 4);
+    crypto_blake2b_final(&ctx, new_hash);
+
+    combined = ((uint32_t)new_hash[0] << 24) | ((uint32_t)new_hash[1] << 16) |
+               ((uint32_t)new_hash[2] << 8)  |  (uint32_t)new_hash[3];
+    idx = combined % num_mem_valid_challenges;
+    unpack_challenge(mem_valid_challenges[idx], &tc, &tt, &bc, &bt);
+
+    /* configure PUF */
+    puf_send_cmd(PUF_TUNE, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+    puf_send_cmd(PUF_CHOICE_SET, ((tc & 3u) << 2) | (bc & 3u));
+    top_phi     = (tc % 2u != 0u) ? PUF_TOP_PATTERN     : (PUF_TOP_PATTERN | 1u);
+    top_pattern = (tc % 2u != 0u) ? 0xAAAAAAAAu : 0x55555555u;
+    bot_phi     = (bc % 2u == 0u) ? PUF_BOTTOM_PATTERN  : (PUF_BOTTOM_PATTERN | 1u);
+    bot_pattern = (bc % 2u == 0u) ? 0xAAAAAAAAu : 0x55555555u;
+    puf_send_cmd(top_phi, top_pattern);
+    puf_send_cmd(bot_phi, bot_pattern);
+
+    /* majority vote */
+    if (count < 1u) count = 1u;
+    for (mv = 0; mv < 64u; mv++) bit_ones[mv] = 0u;
+    for (mv = 0; mv < count; mv++) {
+        uint32_t s_hi, s_lo;
+        puf_do_req(&s_hi, &s_lo);
+        for (uint32_t b = 0; b < 32u; b++) {
+            if ((s_lo >> b) & 1u) bit_ones[b]++;
+            if ((s_hi >> b) & 1u) bit_ones[b + 32u]++;
+        }
+    }
+    hi = 0; lo = 0;
+    for (mv = 0; mv < 32u; mv++) {
+        if (bit_ones[mv]      * 2u >= count) lo |= (1u << mv);
+        if (bit_ones[mv + 32u]* 2u >= count) hi |= (1u << mv);
+    }
+    resp[0] = (uint8_t)(hi >> 24); resp[1] = (uint8_t)(hi >> 16);
+    resp[2] = (uint8_t)(hi >> 8);  resp[3] = (uint8_t)hi;
+    resp[4] = (uint8_t)(lo >> 24); resp[5] = (uint8_t)(lo >> 16);
+    resp[6] = (uint8_t)(lo >> 8);  resp[7] = (uint8_t)lo;
+    return 0;
+}
+
+int puf_bch_enroll(uint32_t state_index, uint32_t challenge_id,
+                   uint32_t vote_count, uint8_t out_seed[32])
+{
+    puf_state_t *st;
+    uint8_t y[8];   /* majority-voted raw PUF response */
+    uint8_t W[8];   /* fuzzy commitment secret */
+    uint8_t ecc[4];
+    crypto_blake2b_ctx ctx;
+    time_ll_t now;
+    int i;
+
+    if (state_index >= NUM_STATES) return -1;
+    st = &lr_states[state_index];
+
+    if (puf_lr_measure_raw(state_index, challenge_id, vote_count, y) < 0)
+        return -1;
+
+    /* Derive W from y, state, challenge, and timer entropy */
+    now = readtime_ll();
+    crypto_blake2b_init(&ctx, 32);
+    crypto_blake2b_update(&ctx, st->hash_value, HASH_SIZE);
+    crypto_blake2b_update(&ctx, (const uint8_t *)&challenge_id, 4);
+    crypto_blake2b_update(&ctx, y, 8);
+    crypto_blake2b_update(&ctx, (const uint8_t *)&now.s.time_low, 4);
+    {
+        uint8_t w_hash[32];
+        crypto_blake2b_final(&ctx, w_hash);
+        for (i = 0; i < 8; i++) W[i] = w_hash[i];
+    }
+
+    /* Compute BCH ECC of W */
+    for (i = 0; i < 4; i++) ecc[i] = 0;
+    bch_puf_encode(W, ecc);
+
+    /* Store helper = y XOR W and ECC */
+    for (i = 0; i < 8; i++) bch_helpers[state_index].helper[i] = y[i] ^ W[i];
+    for (i = 0; i < 4; i++) bch_helpers[state_index].ecc[i] = ecc[i];
+    bch_helpers_valid |= (1u << state_index);
+    bch_save_helpers();
+
+    /* Derive final seed from state, challenge, and W */
+    crypto_blake2b_init(&ctx, 32);
+    crypto_blake2b_update(&ctx, st->hash_value, HASH_SIZE);
+    crypto_blake2b_update(&ctx, (const uint8_t *)&challenge_id, 4);
+    crypto_blake2b_update(&ctx, W, 8);
+    crypto_blake2b_final(&ctx, out_seed);
+
+    uart_puts("BCH: enrolled state ");
+    uart_print_hex(state_index);
+    uart_puts("\r\n");
+    return 0;
+}
+
+int puf_bch_query(uint32_t state_index, uint32_t challenge_id, uint8_t out_seed[32])
+{
+    puf_state_t *st;
+    uint8_t noisy_y[8];
+    uint8_t candidate[8];
+    crypto_blake2b_ctx ctx;
+    int n_errs, i;
+
+    if (state_index >= NUM_STATES) return -1;
+    st = &lr_states[state_index];
+
+    if (!(bch_helpers_valid & (1u << state_index))) {
+        uart_puts("BCH: not enrolled\r\n");
+        return -1;
+    }
+
+    if (puf_lr_measure_raw(state_index, challenge_id, 1u, noisy_y) < 0)
+        return -1;
+
+    /* candidate = noisy_y XOR helper = (y XOR error) XOR (y XOR W) = W XOR error */
+    for (i = 0; i < 8; i++)
+        candidate[i] = noisy_y[i] ^ bch_helpers[state_index].helper[i];
+
+    /* BCH decode corrects up to 4 bit flips in candidate, recovering W */
+    n_errs = bch_puf_decode(candidate, bch_helpers[state_index].ecc);
+    if (n_errs < 0) {
+        uart_puts("BCH: uncorrectable errors\r\n");
+        return -1;
+    }
+
+    /* Derive seed from state, challenge, and recovered W */
+    crypto_blake2b_init(&ctx, 32);
+    crypto_blake2b_update(&ctx, st->hash_value, HASH_SIZE);
+    crypto_blake2b_update(&ctx, (const uint8_t *)&challenge_id, 4);
+    crypto_blake2b_update(&ctx, candidate, 8);
+    crypto_blake2b_final(&ctx, out_seed);
+
+    uart_puts("BCH: query ok, errs=");
+    uart_print_hex((uint32_t)n_errs);
+    uart_puts("\r\n");
+    return 0;
 }

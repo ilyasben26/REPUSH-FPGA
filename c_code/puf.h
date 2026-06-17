@@ -122,4 +122,22 @@ extern void puf_clear_states(void);
 /* Print a one-line summary (domain + ack status) for every state slot. */
 extern void puf_list_states(void);
 
+/* ---- BCH Fuzzy Commitment API ---- */
+
+/* Load BCH helper data (helper[8] + ecc[4] per state) from SD block 16.
+ * Call once at startup after sd_card_init(). */
+extern void puf_bch_load_helpers(void);
+
+/* Enroll: takes majority-voted PUF measurement (vote_count samples), derives
+ * a secret W, computes BCH ECC, stores helper+ecc to SD, writes 32-byte seed.
+ * Returns 0 on success, -1 on error. */
+extern int puf_bch_enroll(uint32_t state_index, uint32_t challenge_id,
+                          uint32_t vote_count, uint8_t out_seed[32]);
+
+/* Query: takes single-shot PUF measurement, XORs with helper, BCH-corrects
+ * up to 4 bit flips, and derives the same 32-byte seed as enroll.
+ * Returns 0 on success, -1 on error. */
+extern int puf_bch_query(uint32_t state_index, uint32_t challenge_id,
+                         uint8_t out_seed[32]);
+
 #endif

@@ -13,6 +13,7 @@
 #include "sd_card_cgpt.h"
 #include "monocypher.h"
 #include "puf.h"
+#include "bch_puf.h"
 #if defined(BOARD_9K)
 #include "uflash.h"
 #include "xorshift32.h"
@@ -50,6 +51,8 @@ extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 #define PROTO_CMD_PUF_MARK_ACKNOWLEDGED     12
 #define PROTO_CMD_PUF_CLEAR_STATES          13
 #define PROTO_CMD_PUF_GET_SLOT_STATUS       14
+#define PROTO_CMD_PUF_BCH_ENROLL            15
+#define PROTO_CMD_PUF_BCH_QUERY             16
 
 #define PROTO_ERR_BAD_CRC 1
 #define PROTO_ERR_BAD_LEN 2
@@ -390,6 +393,53 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
       resp[2 + dlen++] = (uint8_t)domain[i];
     resp[2 + dlen++] = '\0';
     proto_send_frame(PROTO_MSG_RSP, seq, cmd, resp, (uint16_t)(2 + dlen));
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_BCH_ENROLL)
+  {
+    /* payload: state_idx(1) + challenge_id(4) + vote_count(1) = 6 bytes
+     * response: seed[32] */
+    uint8_t seed[32];
+    uint32_t state_idx, challenge_id, vote_count;
+    if (payload_len < 6)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    state_idx    = payload[0];
+    challenge_id = (uint32_t)payload[1] | ((uint32_t)payload[2] << 8) |
+                   ((uint32_t)payload[3] << 16) | ((uint32_t)payload[4] << 24);
+    vote_count   = (payload[5] > 0u) ? (uint32_t)payload[5] : 10u;
+    if (puf_bch_enroll(state_idx, challenge_id, vote_count, seed) < 0)
+    {
+      proto_send_error(seq, cmd, 2);
+      return;
+    }
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, seed, 32);
+    return;
+  }
+
+  if (cmd == PROTO_CMD_PUF_BCH_QUERY)
+  {
+    /* payload: state_idx(1) + challenge_id(4) = 5 bytes
+     * response: seed[32] */
+    uint8_t seed[32];
+    uint32_t state_idx, challenge_id;
+    if (payload_len < 5)
+    {
+      proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
+      return;
+    }
+    state_idx    = payload[0];
+    challenge_id = (uint32_t)payload[1] | ((uint32_t)payload[2] << 8) |
+                   ((uint32_t)payload[3] << 16) | ((uint32_t)payload[4] << 24);
+    if (puf_bch_query(state_idx, challenge_id, seed) < 0)
+    {
+      proto_send_error(seq, cmd, 2);
+      return;
+    }
+    proto_send_frame(PROTO_MSG_RSP, seq, cmd, seed, 32);
     return;
   }
 
@@ -1001,6 +1051,8 @@ void help(void)
   uart_puts("ck            : check CA public key in SD card\r\n");
   uart_puts("xc            : clear all LR-PUF enrollment slots (keeps challenges + CA key)\r\n");
   uart_puts("xs            : show all LR-PUF enrollment slots and ack status\r\n");
+  uart_puts("be state chal : BCH enroll state/challenge (10-vote majority, saves to SD)\r\n");
+  uart_puts("bq state chal : BCH query state/challenge (single-shot, BCH-corrected)\r\n");
   uart_puts("   all numbers are hex\r\n");
 }
 
@@ -1133,6 +1185,34 @@ void buserr(void)
   asm volatile("lh %[rd], 1(%[rs])" : [rd] "=r"(v) : [rs] "r"(p));
 }
 
+static void debug_bch_enroll(uint32_t state_idx, uint32_t challenge_id)
+{
+  uint8_t seed[32];
+  int i;
+  if (puf_bch_enroll(state_idx, challenge_id, 10u, seed) < 0) {
+    uart_puts("BCH_ERR\r\n");
+    return;
+  }
+  uart_puts("BCH_SEED:");
+  for (i = 0; i < 32; i++)
+    uart_print_hex_byte(seed[i]);
+  uart_puts("\r\n");
+}
+
+static void debug_bch_query(uint32_t state_idx, uint32_t challenge_id)
+{
+  uint8_t seed[32];
+  int i;
+  if (puf_bch_query(state_idx, challenge_id, seed) < 0) {
+    uart_puts("BCH_ERR\r\n");
+    return;
+  }
+  uart_puts("BCH_SEED:");
+  for (i = 0; i < 32; i++)
+    uart_print_hex_byte(seed[i]);
+  uart_puts("\r\n");
+}
+
 /* struct command lists available commands.  See function help.
  * Each function takes one or two arguments.  The table below
  * contains a pointer to the function to call for each command.
@@ -1203,7 +1283,9 @@ struct command
     {"cl", 2, .u.func2 = puf_challenge_lr},
     {"ck", 0, .u.func0 = debug_ca_key},
     {"xc", 0, .u.func0 = puf_clear_states},
-    {"xs", 0, .u.func0 = puf_list_states}};
+    {"xs", 0, .u.func0 = puf_list_states},
+    {"be", 2, .u.func2 = debug_bch_enroll},
+    {"bq", 2, .u.func2 = debug_bch_query}};
 
 void eat_spaces(char **buf, uint32_t *len)
 {
@@ -1352,8 +1434,9 @@ err:
 
 int main()
 {
-  char buf[BUFLEN];
-  uint32_t len;
+  static char dbg_line[BUFLEN];
+  static uint32_t dbg_len = 0;
+  uint8_t dbg_ch;
 
   set_leds(6);
 
@@ -1390,15 +1473,37 @@ int main()
   puf_load_challenges();
   uart_puts("Loading LR-PUF states from SD...\r\n");
   puf_load_states();
+  uart_puts("Initializing BCH tables...\r\n");
+  bch_puf_init();
+  uart_puts("Loading BCH helpers from SD...\r\n");
+  puf_bch_load_helpers();
 
   while (1)
   {
-    /* Poll main UART */
-    if (*((volatile uint8_t *)0x8000000c) != 0xff)
+    /* Poll main UART (non-blocking: never stall while Arduino frame is in flight) */
+    while (dbg_len < BUFLEN - 1 &&
+           (dbg_ch = *((volatile uint8_t *)0x8000000c)) != 0xff)
     {
-      len = uart_gets(buf, BUFLEN);
-      if (len != 0)
-        parse(buf, len);
+      if (dbg_ch == '\r' || dbg_ch == '\n')
+      {
+        uart_puts("\r\n");
+        if (dbg_len > 0)
+        {
+          dbg_line[dbg_len] = '\0';
+          parse(dbg_line, dbg_len);
+          dbg_len = 0;
+        }
+      }
+      else if (dbg_ch == 3 || dbg_ch == 0x7f || dbg_ch == 8)
+      {
+        uart_puts("\r\ncancelled\r\n");
+        dbg_len = 0;
+      }
+      else
+      {
+        uart_putchar((char)dbg_ch);
+        dbg_line[dbg_len++] = (char)dbg_ch;
+      }
     }
 
     /* Poll Arduino UART */
