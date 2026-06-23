@@ -41,18 +41,18 @@ extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 #define PROTO_CMD_GET_INFO 2
 #define PROTO_CMD_GET_TIME 3
 #define PROTO_CMD_GET_CA_KEY 4
-#define PROTO_CMD_PUF_GET_FREE_STATE    5
+#define PROTO_CMD_PUF_GET_FREE_STATE 5
 #define PROTO_CMD_PUF_RECONFIGURE_STATE 6
-#define PROTO_CMD_PUF_CHALLENGE_LR      7
-#define PROTO_CMD_PUF_SET_DOMAIN        8
-#define PROTO_CMD_PUF_STORE_ENROLLMENT  9
-#define PROTO_CMD_PUF_SAVE_STATES           10
-#define PROTO_CMD_PUF_FIND_STATE_BY_DOMAIN  11
-#define PROTO_CMD_PUF_MARK_ACKNOWLEDGED     12
-#define PROTO_CMD_PUF_CLEAR_STATES          13
-#define PROTO_CMD_PUF_GET_SLOT_STATUS       14
-#define PROTO_CMD_PUF_BCH_ENROLL            15
-#define PROTO_CMD_PUF_BCH_QUERY             16
+#define PROTO_CMD_PUF_CHALLENGE_LR 7
+#define PROTO_CMD_PUF_SET_DOMAIN 8
+#define PROTO_CMD_PUF_STORE_ENROLLMENT 9
+#define PROTO_CMD_PUF_SAVE_STATES 10
+#define PROTO_CMD_PUF_FIND_STATE_BY_DOMAIN 11
+#define PROTO_CMD_PUF_MARK_ACKNOWLEDGED 12
+#define PROTO_CMD_PUF_CLEAR_STATES 13
+#define PROTO_CMD_PUF_GET_SLOT_STATUS 14
+#define PROTO_CMD_PUF_BCH_ENROLL 15
+#define PROTO_CMD_PUF_BCH_QUERY 16
 
 #define PROTO_ERR_BAD_CRC 1
 #define PROTO_ERR_BAD_LEN 2
@@ -262,7 +262,7 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
       proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
       return;
     }
-    state_idx    = payload[0];
+    state_idx = payload[0];
     challenge_id = (uint32_t)payload[1] | ((uint32_t)payload[2] << 8) |
                    ((uint32_t)payload[3] << 16) | ((uint32_t)payload[4] << 24);
     /* Optional 6th byte: majority-vote sample count (0 or absent → 1). */
@@ -341,9 +341,12 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
       return;
     }
     resp[0] = (uint8_t)state_idx;
-    for (i = 0; i < 32; i++) resp[1  + i] = pubkey[i];
-    for (i = 0; i < 16; i++) resp[33 + i] = challenge[i];
-    for (i = 0; i < 32; i++) resp[49 + i] = pk_server[i];
+    for (i = 0; i < 32; i++)
+      resp[1 + i] = pubkey[i];
+    for (i = 0; i < 16; i++)
+      resp[33 + i] = challenge[i];
+    for (i = 0; i < 32; i++)
+      resp[49 + i] = pk_server[i];
     proto_send_frame(PROTO_MSG_RSP, seq, cmd, resp, 81);
     return;
   }
@@ -407,10 +410,10 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
       proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
       return;
     }
-    state_idx    = payload[0];
+    state_idx = payload[0];
     challenge_id = (uint32_t)payload[1] | ((uint32_t)payload[2] << 8) |
                    ((uint32_t)payload[3] << 16) | ((uint32_t)payload[4] << 24);
-    vote_count   = (payload[5] > 0u) ? (uint32_t)payload[5] : 10u;
+    vote_count = (payload[5] > 0u) ? (uint32_t)payload[5] : 10u;
     if (puf_bch_enroll(state_idx, challenge_id, vote_count, seed) < 0)
     {
       proto_send_error(seq, cmd, 2);
@@ -431,7 +434,7 @@ void proto_dispatch_request(uint8_t msg_type, uint8_t seq, uint8_t cmd, uint8_t 
       proto_send_error(seq, cmd, PROTO_ERR_BAD_LEN);
       return;
     }
-    state_idx    = payload[0];
+    state_idx = payload[0];
     challenge_id = (uint32_t)payload[1] | ((uint32_t)payload[2] << 8) |
                    ((uint32_t)payload[3] << 16) | ((uint32_t)payload[4] << 24);
     if (puf_bch_query(state_idx, challenge_id, seed) < 0)
@@ -477,7 +480,7 @@ void proto_feed_byte(uint8_t ch)
     proto_rx_crc = proto_crc16_update(proto_rx_crc, ch);
     if (proto_header_index == sizeof(proto_header))
     {
-      proto_payload_len = (uint16_t)proto_header[4] | ((uint16_t)proto_header[5] << 8);
+      proto_payload_len = (uint16_t)proto_header[4] | ((uint16_t)proto_header[5] << 8); // since it arrives as little-endian, it must be converted to big-endian
 
       if (proto_header[0] != PROTO_VERSION)
       {
@@ -514,7 +517,7 @@ void proto_feed_byte(uint8_t ch)
     break;
 
   case PROTO_READ_CRC_HI:
-    received_crc = (uint16_t)proto_rx_crc_lo | ((uint16_t)ch << 8);
+    received_crc = (uint16_t)proto_rx_crc_lo | ((uint16_t)ch << 8); // little-endian to big-endian
     if (received_crc == proto_rx_crc)
       proto_dispatch_request(proto_header[1], proto_header[2], proto_header[3], proto_payload, proto_payload_len);
     else
@@ -1189,7 +1192,8 @@ static void debug_bch_enroll(uint32_t state_idx, uint32_t challenge_id)
 {
   uint8_t seed[32];
   int i;
-  if (puf_bch_enroll(state_idx, challenge_id, 10u, seed) < 0) {
+  if (puf_bch_enroll(state_idx, challenge_id, 10u, seed) < 0)
+  {
     uart_puts("BCH_ERR\r\n");
     return;
   }
@@ -1203,7 +1207,8 @@ static void debug_bch_query(uint32_t state_idx, uint32_t challenge_id)
 {
   uint8_t seed[32];
   int i;
-  if (puf_bch_query(state_idx, challenge_id, seed) < 0) {
+  if (puf_bch_query(state_idx, challenge_id, seed) < 0)
+  {
     uart_puts("BCH_ERR\r\n");
     return;
   }
@@ -1480,11 +1485,11 @@ int main()
 
   while (1)
   {
-    /* Poll main UART (non-blocking: never stall while Arduino frame is in flight) */
+    // Poll debug UART (USB C)
     while (dbg_len < BUFLEN - 1 &&
            (dbg_ch = *((volatile uint8_t *)0x8000000c)) != 0xff)
     {
-      if (dbg_ch == '\r' || dbg_ch == '\n')
+      if (dbg_ch == '\r' || dbg_ch == '\n') // user pressed ENTER
       {
         uart_puts("\r\n");
         if (dbg_len > 0)
@@ -1494,7 +1499,7 @@ int main()
           dbg_len = 0;
         }
       }
-      else if (dbg_ch == 3 || dbg_ch == 0x7f || dbg_ch == 8)
+      else if (dbg_ch == 3 || dbg_ch == 0x7f || dbg_ch == 8) // 3 is CTRL+C, 0x7f is DELETE and 8 is Backspace
       {
         uart_puts("\r\ncancelled\r\n");
         dbg_len = 0;
@@ -1506,7 +1511,7 @@ int main()
       }
     }
 
-    /* Poll Arduino UART */
+    // Poll Arduino UART
     proto_poll_arduino_uart();
   }
 
