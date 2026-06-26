@@ -1176,6 +1176,102 @@ void puf_list_states(void)
 }
 
 /* ============================================================
+ * Evaluation utilities
+ * ============================================================ */
+
+/*
+ * Sweep every loaded valid challenge, take one raw PUF measurement each,
+ * and print the result to the debug UART in the format:
+ *
+ *   PV_START <count_hex8>
+ *   <tc_hex2> <tt_hex2> <bc_hex2> <bt_hex2> <HI_hex8>:<LO_hex8>
+ *   ...
+ *   PV_END
+ *
+ * Run 'lc' before calling this.
+ */
+void puf_dump_valid_responses(void)
+{
+    uint32_t i, tc, tt, bc, bt;
+    uint32_t hi, lo;
+    uint32_t top_phi, top_pattern, bot_phi, bot_pattern;
+
+    if (num_mem_valid_challenges == 0) {
+        uart_puts("no valid challenges -- run lc first\r\n");
+        return;
+    }
+
+    uart_puts("PV_START ");
+    uart_print_hex(num_mem_valid_challenges);
+    uart_puts("\r\n");
+
+    for (i = 0u; i < num_mem_valid_challenges; i++) {
+        unpack_challenge(mem_valid_challenges[i], &tc, &tt, &bc, &bt);
+
+        puf_send_cmd(PUF_TUNE, ((tt & 7u) << 5) | ((bt & 7u) << 2));
+        puf_send_cmd(PUF_CHOICE_SET, ((tc & 3u) << 2) | (bc & 3u));
+
+        top_phi     = (tc % 2u != 0u) ? PUF_TOP_PATTERN       : (PUF_TOP_PATTERN | 1u);
+        top_pattern = (tc % 2u != 0u) ? 0xAAAAAAAAu : 0x55555555u;
+        bot_phi     = (bc % 2u == 0u) ? PUF_BOTTOM_PATTERN     : (PUF_BOTTOM_PATTERN | 1u);
+        bot_pattern = (bc % 2u == 0u) ? 0xAAAAAAAAu : 0x55555555u;
+        puf_send_cmd(top_phi, top_pattern);
+        puf_send_cmd(bot_phi, bot_pattern);
+
+        puf_do_req(&hi, &lo);
+
+        uart_print_hex_byte((uint8_t)tc);
+        uart_putchar(' ');
+        uart_print_hex_byte((uint8_t)tt);
+        uart_putchar(' ');
+        uart_print_hex_byte((uint8_t)bc);
+        uart_putchar(' ');
+        uart_print_hex_byte((uint8_t)bt);
+        uart_putchar(' ');
+        uart_print_hex(hi);
+        uart_putchar(':');
+        uart_print_hex(lo);
+        uart_puts("\r\n");
+    }
+
+    uart_puts("PV_END\r\n");
+}
+
+/*
+ * Dump count individual (non-voted) raw PUF samples for the current challenge
+ * setting (as last configured by 'ph', 'pt'/'pc', or 'pv').  count is capped
+ * at 1000.  Note: all firmware arguments are parsed as hex, so the 'pm'
+ * command argument must be a hex number (e.g. "pm 64" = 100 samples).
+ *
+ * Output format:
+ *   PM_START <count_hex8>
+ *   <HI_hex8>:<LO_hex8>
+ *   ...
+ *   PM_END
+ */
+void puf_dump_raw_samples(uint32_t count)
+{
+    uint32_t i, hi, lo;
+
+    if (count == 0u)   count = 1u;
+    if (count > 1000u) count = 1000u;
+
+    uart_puts("PM_START ");
+    uart_print_hex(count);
+    uart_puts("\r\n");
+
+    for (i = 0u; i < count; i++) {
+        puf_do_req(&hi, &lo);
+        uart_print_hex(hi);
+        uart_putchar(':');
+        uart_print_hex(lo);
+        uart_puts("\r\n");
+    }
+
+    uart_puts("PM_END\r\n");
+}
+
+/* ============================================================
  * BCH Fuzzy Commitment — PUF error correction
  * ============================================================ */
 

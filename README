@@ -27,4 +27,18 @@ TODO: add images
 - Right click on the first entry then choose "Program/Configure" to flash the FPGA.
 
 
+## Evaluation
+```shell
+# Step 1: uniformity data
+python collect_uniformity.py --port /dev/tty.usbserial-XXXX --output uniformity.csv
+
+# Step 2: BER data (all valid challenges, 100 samples each)
+python collect_ber.py --port /dev/tty.usbserial-XXXX --samples 100 --output ber.csv
+# or limit to 30 challenges: add --max-challenges 30
+
+# Step 3: full analysis + plots
+python analyze_puf.py --uniformity uniformity.csv --ber ber.csv --plot
+```
+
+
 

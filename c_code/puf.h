@@ -122,6 +122,25 @@ extern void puf_clear_states(void);
 /* Print a one-line summary (domain + ack status) for every state slot. */
 extern void puf_list_states(void);
 
+/* ---- Evaluation utilities ---- */
+
+/* Sweep every loaded valid challenge, take one raw measurement, and print to
+ * the debug UART.  Format:
+ *   PV_START <count_hex8>
+ *   <tc_hex2> <tt_hex2> <bc_hex2> <bt_hex2> <HI_hex8>:<LO_hex8>
+ *   PV_END
+ * Requires 'lc' to have been called first (valid challenges must be in SRAM). */
+extern void puf_dump_valid_responses(void);
+
+/* Dump count individual (non-voted) raw PUF samples for the current challenge
+ * setting (last configured by 'ph' or 'pv').  count is capped at 1000.
+ * NOTE: the firmware argument parser uses hex, so "pm 64" = 100 samples.
+ * Format:
+ *   PM_START <count_hex8>
+ *   <HI_hex8>:<LO_hex8>
+ *   PM_END */
+extern void puf_dump_raw_samples(uint32_t count);
+
 /* ---- BCH Fuzzy Commitment API ---- */
 
 /* Load BCH helper data (helper[8] + ecc[4] per state) from SD block 16.

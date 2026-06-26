@@ -1045,6 +1045,8 @@ void help(void)
   uart_puts("ps            : save valid challenges to SD card (run si first)\r\n");
   uart_puts("lc            : load valid challenges from SD card into memory\r\n");
   uart_puts("pk            : query PUF for a typed string (maps string -> challenge)\r\n");
+  uart_puts("pv            : dump one raw response per valid challenge (tc tt bc bt HI:LO)\r\n");
+  uart_puts("pm count      : dump count raw samples for current challenge (hex arg: pm 64 = 100)\r\n");
   uart_puts("rs state seed : reconfigure LR-PUF state (0-10) with external seed\r\n");
   uart_puts("cl state chal : perform LR-PUF challenge using state\r\n");
   uart_puts("ss            : save LR-PUF states to SD card\r\n");
@@ -1280,6 +1282,8 @@ struct command
     {"ps", 0, .u.func0 = puf_save},
     {"lc", 0, .u.func0 = puf_load_challenges},
     {"pk", 0, .u.func0 = puf_key},
+    {"pv", 0, .u.func0 = puf_dump_valid_responses},
+    {"pm", 1, .u.func1 = puf_dump_raw_samples},
     {"ss", 0, .u.func0 = puf_save_states},
     {"ls", 0, .u.func0 = puf_load_states},
     {"sd", 1, .u.func1 = puf_set_domain},
