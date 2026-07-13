@@ -2,6 +2,29 @@
 
 This repository contains the Gowin IDE project for the FPGA part of the REPUSH dongle.
 
+## Repository Layout
+
+```
+REPUSH-FPGA/
+├── src/                        Verilog SoC (PicoRV32 core + CHOICE-PUF peripheral)
+│   ├── top.v                   SoC top level
+│   ├── puf_peripheral.v        Memory-mapped CHOICE-PUF wrapper
+│   ├── picorv32.v              PicoRV32 RISC-V core (unmodified, from YosysHQ)
+│   └── ...                     UART, SD-SPI, SRAM, flash controller, RNG/PLL wrappers
+├── c_code/                     FPGA firmware, compiled for the PicoRV32 soft core
+│   ├── main.c                  Firmware entry point + debug-shell command dispatcher
+│   ├── puf.c / puf.h           CHOICE-PUF driver, LR-PUF state machine, SD persistence
+│   ├── bch_puf.c / bch_puf.h   BCH fuzzy-commitment enroll/query
+│   ├── conv_to_init.c          Converts a binary image into a Verilog $readmemh init file
+│   └── ...                     UART, SD card, SPI flash, timers, LEDs, RNG drivers
+├── monocypher-4.0.2/           Monocypher crypto library (vendored, Ed25519 + Blake2b)
+├── PUF-FPGA/                   Standalone CHOICE-PUF-only prototype (VHDL, Basys2 target)
+├── python_scripts/             Host-side evaluation & data-collection scripts (see Evaluation)
+├── picorv32_20k.gprj           Gowin IDE project — Tang Nano 20K (primary target)
+├── picorv32_9k.gprj            Gowin IDE project — Tang Nano 9K
+└── README                      This file
+```
+
 ## Pre-requisites:
 - Gowin IDE: Follow the instructions on https://wiki.sipeed.com/hardware/en/tang/common-doc/install-the-ide.html
 - Make
@@ -16,18 +39,29 @@ make clean
 make 20k
 ```
 ## Flash the FPGA
-TODO: add images
 - Open the Gowin IDE.
 - File -> Open, then choose `picorv32_20k.gprj`.
-- Click on "Process".
+- Click on the "Process" tab.
 - Right click on "Place & Route" -> Click on "Clean & Rerun All".
 - Click on "Programmer".
-- Right click on the first entry then choose "Configure Device".
+- Right click on the first entry and then choose "Configure Device".
 - Change Access Mode to "External Flash Mode", then click on "Save".
-- Right click on the first entry then choose "Program/Configure" to flash the FPGA.
+- Right click on the first entry and then choose "Program/Configure" to flash the FPGA.
 
 
 ## Evaluation
+
+Set up a virtual environment and install the Python dependencies used by the
+`python_scripts/` tools:
+
+```sh
+cd python_scripts
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### CHOICE PUF uniformity and reliability
 ```shell
 # Step 1: uniformity data
 python collect_uniformity.py --port /dev/tty.usbserial-XXXX --output uniformity.csv
@@ -38,6 +72,33 @@ python collect_ber.py --port /dev/tty.usbserial-XXXX --samples 100 --output ber.
 
 # Step 3: full analysis + plots
 python analyze_puf.py --uniformity uniformity.csv --ber ber.csv --plot
+```
+
+### LR-PUF
+Enrolls the BCH fuzzy commitment scheme for a given state/challenge, then
+repeatedly queries it and checks whether the reconstructed key matches the
+enrolled one:
+```shell
+python collect_lrpuf.py --port /dev/tty.usbserial-XXXX --state 0 --challenge 0
+# --queries N     change the number of repeated queries (default 500)
+# --no-enroll     skip enrollment and only query an already-enrolled state
+```
+Output columns: `query_idx, state_idx, challenge_id, success, key_hex`.
+
+### BCH enroll/query latency
+Times how long the FPGA takes to respond to the `be`/`bq` debug commands,
+measured from the host side:
+```shell
+python collect_perf.py --port /dev/tty.usbserial-XXXX --enroll-count 10 --query-count 50
+```
+
+### TRNG randomness (NIST SP 800-22)
+Dump raw bytes from the Arduino's floating-pin entropy source, then run the
+NIST statistical test suite (requires at least 125,000 bytes / 1,000,000 bits):
+```shell
+python collect_trng.py --port /dev/tty.usbmodem-XXXX --bytes 125000 --output trng.bin
+
+python analyze_trng.py trng.bin
 ```
 
 
