@@ -26,7 +26,7 @@
 extern uint32_t timer_instr(uint32_t val);   /* from startup.S */
 extern uint32_t maskirq_instr(uint32_t val); /* from startup.S */
 
-#define ARDUINO_UART_DATA_REG ((volatile uint8_t *)0x8000005c)
+#define ARDUINO_UART_DATA_REG ((volatile uint32_t *)0x8000005c)
 
 #define PROTO_SOF1 0xA5
 #define PROTO_SOF2 0x5A
@@ -533,11 +533,15 @@ void proto_feed_byte(uint8_t ch)
 
 void proto_poll_arduino_uart(void)
 {
-  uint8_t ch;
+  uint32_t word;
 
-  while ((ch = *ARDUINO_UART_DATA_REG) != 0xff)
+  /* The data register reads back as 0xffffffff (all bits set) only when the
+   * RX buffer is empty; a valid byte always has its upper 24 bits clear, so
+   * even a genuine 0xff data byte is distinguishable from "no data" here.
+   * Truncating to 8 bits before this comparison would lose that distinction. */
+  while ((word = *ARDUINO_UART_DATA_REG) != 0xffffffffu)
   {
-    proto_feed_byte(ch);
+    proto_feed_byte((uint8_t)word);
   }
 }
 

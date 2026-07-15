@@ -8,6 +8,7 @@
 #define UART_DATA ((volatile uint8_t *)0x8000000c)
 #define ARDUINO_UART_DIV ((volatile uint32_t *)0x80000058)
 #define ARDUINO_UART_DATA ((volatile uint8_t *)0x8000005c)
+#define ARDUINO_UART_DATA32 ((volatile uint32_t *)0x8000005c)
 
 static uint32_t arduino_mirror_enabled = 1;
 
@@ -169,11 +170,13 @@ void arduino_uart_print_hex(uint32_t val)
 
 char arduino_uart_getchar(void)
 {
-  uint8_t ch;
-  while ((ch = *ARDUINO_UART_DATA) == 0xff)
+  uint32_t word;
+  /* See proto_poll_arduino_uart() in main.c: only the full 32-bit word
+   * distinguishes "no data" (0xffffffff) from a genuine 0xff data byte. */
+  while ((word = *ARDUINO_UART_DATA32) == 0xffffffffu)
   {
   }
-  return (ch);
+  return (char)word;
 }
 
 void arduino_uart_putchar(char ch)
