@@ -182,6 +182,7 @@ def analyze_uniformity(responses: list[int], plot: bool, out_dir: Path) -> None:
 
     try:
         import matplotlib.pyplot as plt
+        from matplotlib.patches import Patch
         import numpy as np
     except ImportError:
         print("matplotlib / numpy not installed — skipping plots.")
@@ -200,7 +201,10 @@ def analyze_uniformity(responses: list[int], plot: bool, out_dir: Path) -> None:
                  f'(n={n} challenges, overall mean={overall_pct:.2f}%)')
     ax.set_xlim(-0.5, 63.5)
     ax.set_ylim(0, 100)
-    ax.legend()
+    handles, labels = ax.get_legend_handles_labels()
+    handles += [Patch(color='steelblue', label='40% <= y <= 60%'),
+                Patch(color='tomato', label='y < 40% or y > 60%')]
+    ax.legend(handles=handles)
     fig.tight_layout()
     out_path = out_dir / 'plot_uniformity_bits.png'
     fig.savefig(out_path, dpi=150)
@@ -217,13 +221,16 @@ def analyze_uniformity(responses: list[int], plot: bool, out_dir: Path) -> None:
     ax.axhline(50 - 10, color='gray', linewidth=0.7, linestyle=':')
     ax.axhline(ch_mean, color='tomato', linewidth=1.2, linestyle='-',
                label=f'Mean = {ch_mean:.1f}%')
-    ax.set_xlabel('Challenge (sorted by uniformity)')
+    ax.set_xlabel('Challenge (sorted by response uniformity)')
     ax.set_ylabel('Uniformity (percentage of 1s)')
     ax.set_title('CHOICE PUF — Per-challenge Uniformity (sorted)\n'
                  f'(n={n} challenges, mean={ch_mean:.1f}%, std={ch_std:.1f} pp)')
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(0, 100)
-    ax.legend()
+    handles, labels = ax.get_legend_handles_labels()
+    handles += [Patch(color='steelblue', label='40% <= y <= 60%'),
+                Patch(color='tomato', label='y < 40% or y > 60%')]
+    ax.legend(handles=handles)
     fig.tight_layout()
     out_path = out_dir / 'plot_uniformity_per_challenge.png'
     fig.savefig(out_path, dpi=150)
@@ -246,7 +253,10 @@ def analyze_uniformity(responses: list[int], plot: bool, out_dir: Path) -> None:
                  f'(n={n} challenges, mean={uniqueness_mean:.1f}%, std={uniqueness_std:.1f}%)')
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(0, 100)
-    ax.legend()
+    handles, labels = ax.get_legend_handles_labels()
+    handles += [Patch(color='steelblue', label='40% <= y <= 60%'),
+                Patch(color='tomato', label='y < 40% or y > 60%')]
+    ax.legend(handles=handles, loc='upper left')
     fig.tight_layout()
     out_path = out_dir / 'plot_uniqueness.png'
     fig.savefig(out_path, dpi=150)
@@ -319,6 +329,7 @@ def analyze_ber(per_challenge: dict[int, list[int]], plot: bool, out_dir: Path) 
 
     try:
         import matplotlib.pyplot as plt
+        from matplotlib.patches import Patch
     except ImportError:
         print("matplotlib not installed — skipping plots.")
         return
@@ -338,7 +349,10 @@ def analyze_ber(per_challenge: dict[int, list[int]], plot: bool, out_dir: Path) 
                  f'({n} challenges, {r} samples each)')
     ax.set_xlim(-0.5, 63.5)
     ax.set_ylim(min(95.0, float(rel_bit_pct.min()) - 1), 100)
-    ax.legend()
+    handles, labels = ax.get_legend_handles_labels()
+    handles += [Patch(color='steelblue', label='Reliability ≥ 99%'),
+                Patch(color='tomato', label='Reliability < 99%')]
+    ax.legend(handles=handles, loc='lower right')
     fig.tight_layout()
     out_path = out_dir / 'plot_reliability_per_bit.png'
     fig.savefig(out_path, dpi=150)
@@ -360,7 +374,10 @@ def analyze_ber(per_challenge: dict[int, list[int]], plot: bool, out_dir: Path) 
                  f'({n} challenges, {r} samples each)')
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(min(95.0, float(sorted_ch_rel.min()) - 1), 100)
-    ax.legend()
+    handles, labels = ax.get_legend_handles_labels()
+    handles += [Patch(color='steelblue', label='Reliability ≥ 99%'),
+                Patch(color='tomato', label='Reliability < 99%')]
+    ax.legend(handles=handles, loc='lower right')
     fig.tight_layout()
     out_path = out_dir / 'plot_reliability_per_challenge.png'
     fig.savefig(out_path, dpi=150)
